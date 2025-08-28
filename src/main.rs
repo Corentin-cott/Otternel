@@ -1,6 +1,9 @@
 
 mod config; // Import config module
 
+/**
+Entry point of Otternel
+*/
 fn main() {
     // Try to load configuration from environment variables
     match config::Config::from_env() {
