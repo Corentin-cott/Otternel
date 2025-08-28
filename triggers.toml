@@ -1,0 +1,14 @@
+# A trigger exemple
+[[trigger]]
+name = "trigger name" # The name of the trigger.
+pattern = "Player (\\w+) joined the game" # Regex pattern that the trigger will have to detect.
+serverlog_ids = [1, 2] # Logs concerned by the trigger. Can be multiple. If not defined, all log files are concerned.
+game = "minecraft" # The game concerned by the trigger.
+function = "on_player_joined" # Function called when triggered.
+
+[[trigger]]
+name = "player_joined"
+game = "minecraft"
+server_place_ids = [1, 2]
+pattern = "Player (\\w+) joined the game"
+function = "on_player_joined"
