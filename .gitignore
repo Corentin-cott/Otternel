@@ -1,4 +1,5 @@
 /.idea
 /target
+/serverlog/*.log
 .env
 Cargo.lock
