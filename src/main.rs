@@ -20,8 +20,7 @@ fn main() {
     match config::Config::from_env() {
         Ok(cfg) => {
             println!("Config loaded successfully: {}", cfg.serverlog_folder);
-
-
+            
             // Lancer le watcher — la fonction est bloquante et tourne indéfiniment
             if let Err(err) = log_watcher::watch_serverlogs(&cfg.serverlog_folder) {
                 eprintln!("Log watcher failed: {}", err);

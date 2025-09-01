@@ -10,6 +10,47 @@ use notify::{
     Config as NotifyConfig, Event, Error as NotifyError, RecommendedWatcher, RecursiveMode, Watcher,
 };
 
+/// Decodes a sequence of bytes into a `String`, attempting to interpret the input as UTF-8 or UTF-16 with a fallback mechanism.
+///
+/// # Parameters
+/// - `bytes`: A byte slice (`&[u8]`) representing the encoded data to decode.
+///
+/// # Returns
+/// - A `String` containing the decoded text. If the input bytes are empty, it returns an empty string. If decoding fails, a lossy UTF-8 representation of the input bytes is returned.
+///
+/// # Behavior
+/// 1. If the input `bytes` is empty, an empty string is returned.
+/// 2. If the input can successfully be decoded as UTF-8, that string is returned.
+/// 3. If decoding as UTF-8 fails, the function attempts to decode as UTF-16:
+///    - If the first two bytes match the UTF-16 little-endian byte order mark (BOM, `0xFFFE`), they are skipped.
+///    - If the length of the slice is odd (not divisible by 2), the last trailing byte is removed to align pairs of bytes for UTF-16 decoding.
+///    - The byte pairs are interpreted as UTF-16 little-endian code units, converted into a `String`.
+/// 4. If the UTF-16 decoding fails, the function finally falls back to a lossy UTF-8 representation of the input bytes for the output.
+///
+fn decode_log_bytes(bytes: &[u8]) -> String {
+    if bytes.is_empty() {
+        return String::new();
+    }
+    if let Ok(s) = std::str::from_utf8(bytes) {
+        return s.to_string();
+    }
+    let mut slice = bytes;
+    if slice.len() >= 2 && slice[0] == 0xFF && slice[1] == 0xFE {
+        slice = &slice[2..];
+    }
+    if slice.len() < 2 {
+        return String::new();
+    }
+    if slice.len() % 2 != 0 {
+        slice = &slice[..slice.len() - 1];
+    }
+    let code_units: Vec<u16> = slice
+        .chunks_exact(2)
+        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .collect();
+    String::from_utf16(&code_units).unwrap_or_else(|_| String::from_utf8_lossy(bytes).to_string())
+}
+
 /// This function monitors a folder for `.log` files using file system notifications.
 /// It prints the content of newly created or modified `.log` files, and tracks the last
 /// read position in the file to ensure only new additions are read subsequently. Deleted
@@ -56,9 +97,12 @@ pub fn watch_serverlogs(folder: &str) -> Result<(), NotifyError> {
             if path.extension().and_then(|s| s.to_str()) == Some("log") {
                 match File::open(&path) {
                     Ok(mut f) => {
-                        let mut contents = String::new();
-                        if f.read_to_string(&mut contents).is_ok() && !contents.is_empty() {
-                            println!("--- {} (initial) ---\n{}", path.display(), contents);
+                        let mut bytes = Vec::new();
+                        if f.read_to_end(&mut bytes).is_ok() {
+                            let contents = decode_log_bytes(&bytes);
+                            if !contents.is_empty() {
+                                println!("--- {} (initial) ---\n{}", path.display(), contents);
+                            }
                         }
                         if let Ok(pos) = f.seek(SeekFrom::Current(0)) {
                             positions.insert(path.clone(), pos);
@@ -165,9 +209,10 @@ fn read_new(path: &PathBuf, positions: &mut HashMap<PathBuf, u64>) -> std::io::R
     let start = positions.get(path).cloned().unwrap_or(0);
     f.seek(SeekFrom::Start(start))?;
 
-    // Read the new content
-    let mut buf = String::new();
-    f.read_to_string(&mut buf)?;
+    // Read the new content (bytes) puis décoder UTF-8/UTF-16LE
+    let mut bytes = Vec::new();
+    f.read_to_end(&mut bytes)?;
+    let buf = decode_log_bytes(&bytes);
 
     // Display the new content to stdout if it's not empty
     if !buf.is_empty() {
