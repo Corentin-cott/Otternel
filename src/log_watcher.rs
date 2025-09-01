@@ -92,17 +92,17 @@ pub fn watch_serverlogs(folder: &str) -> Result<(), NotifyError> {
 
     // Load the triggers from the triggers.toml file at the root of the project
     #[derive(Deserialize)]
-    struct Trigger { name: Option<String>, pattern: String, function: String }
+    struct Trigger { name: Option<String>, pattern: String, function: String, serverlog_ids: Option<Vec<u32>> }
     #[derive(Deserialize)]
     struct TriggerFile { trigger: Vec<Trigger> }
 
-    let compiled_triggers: Vec<(Regex, String)> = (|| {
+    let compiled_triggers: Vec<(Regex, String, Option<Vec<u32>>)> = (|| {
         let content = std::fs::read_to_string("triggers.toml").ok()?;
         let tf: TriggerFile = toml::from_str(&content).ok()?;
         let mut out = Vec::new();
         for t in tf.trigger {
             match Regex::new(&t.pattern) {
-                Ok(re) => out.push((re, t.function)),
+                Ok(re) => out.push((re, t.function, t.serverlog_ids)),
                 Err(e) => eprintln!(
                     "Invalid regex in trigger '{}': {} ({})",
                     t.name.unwrap_or_default(),
@@ -121,7 +121,8 @@ pub fn watch_serverlogs(folder: &str) -> Result<(), NotifyError> {
     // Maps each file path to its last read offset by storing its byte position
     let mut positions: HashMap<PathBuf, u64> = HashMap::new();
 
-    // Read the initial content of all log files
+    /* Read the initial content of all log files | Not needed, we only need to read new content
+
     if let Ok(entries) = std::fs::read_dir(&folder) {
         for entry in entries.flatten() {
             let path = entry.path();
@@ -134,10 +135,15 @@ pub fn watch_serverlogs(folder: &str) -> Result<(), NotifyError> {
                             if !contents.is_empty() {
                                 println!("--- {} (initial) ---\n{}", path.display(), contents);
                                 // Run the triggers on the initial content
+                                let serverlog_id = path.file_stem().and_then(|s| s.to_str()).and_then(|s| s.parse::<u32>().ok());
                                 for line in contents.lines() {
-                                    for (re, func) in &compiled_triggers {
+                                    for (re, func, ids_opt) in &compiled_triggers {
                                         if re.is_match(line) {
-                                            actions::dispatch(func, line);
+                                            if let Some(id) = serverlog_id {
+                                                if ids_opt.as_ref().map(|ids| ids.contains(&id)).unwrap_or(true) {
+                                                    actions::dispatch(func, line);
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -152,7 +158,8 @@ pub fn watch_serverlogs(folder: &str) -> Result<(), NotifyError> {
             }
         }
     }
-
+    */
+    
     // Create the watcher and start watching the folder
     let (tx, rx) = channel::<Result<Event, NotifyError>>();
     let mut watcher: RecommendedWatcher = RecommendedWatcher::new(move |res| {
@@ -231,7 +238,7 @@ pub fn watch_serverlogs(folder: &str) -> Result<(), NotifyError> {
 /// - The function assumes that the file may be appended over time and reads any new content since the last recorded position.
 /// - Handles log rotation or truncation scenarios by resetting the read position to the start of the file.
 ///
-fn read_new(path: &PathBuf, positions: &mut HashMap<PathBuf, u64>, compiled_triggers: &[(Regex, String)]) -> std::io::Result<()> {
+fn read_new(path: &PathBuf, positions: &mut HashMap<PathBuf, u64>, compiled_triggers: &[(Regex, String, Option<Vec<u32>>)]) -> std::io::Result<()> {
     let mut f = File::open(path)?;
     let metadata = f.metadata()?;
     let len = metadata.len();
@@ -248,7 +255,7 @@ fn read_new(path: &PathBuf, positions: &mut HashMap<PathBuf, u64>, compiled_trig
     let start = positions.get(path).cloned().unwrap_or(0);
     f.seek(SeekFrom::Start(start))?;
 
-    // Read the new content (bytes) puis décoder UTF-8/UTF-16LE
+    // Read the new content (bytes)
     let mut bytes = Vec::new();
     f.read_to_end(&mut bytes)?;
     let buf = decode_log_bytes(&bytes);
@@ -256,17 +263,22 @@ fn read_new(path: &PathBuf, positions: &mut HashMap<PathBuf, u64>, compiled_trig
     // Display the new content to stdout if it's not empty
     if !buf.is_empty() {
         println!("--- {} (appended) ---\n{}", path.display(), buf);
-        // Déclencher les triggers ligne par ligne
+        // Trigger the actions only if the serverlog_id matches
+        let serverlog_id = path.file_stem().and_then(|s| s.to_str()).and_then(|s| s.parse::<u32>().ok());
         for line in buf.lines() {
-            for (re, func) in compiled_triggers {
+            for (re, func, ids_opt) in compiled_triggers {
                 if re.is_match(line) {
-                    actions::dispatch(func, line);
+                    if let Some(id) = serverlog_id {
+                        if ids_opt.as_ref().map(|ids| ids.contains(&id)).unwrap_or(true) {
+                            actions::dispatch(func, line);
+                        }
+                    }
                 }
             }
         }
     }
 
-    // Update the position in the positions map with the new seek position after reading
+    // Update the position in the position map with the new seek position after reading
     let new_pos = f.seek(SeekFrom::Current(0))?;
     positions.insert(path.clone(), new_pos);
     Ok(())
