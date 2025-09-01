@@ -8,3 +8,5 @@ dotenvy = "0.15"
 envy = "0.4"
 notify = "6"
 serde = { version = "1.0", features = ["derive"] }
+regex = "1"
+toml = "0.8"

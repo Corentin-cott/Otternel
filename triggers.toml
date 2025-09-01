@@ -1,14 +1,19 @@
-# A trigger exemple
 [[trigger]]
-name = "trigger name" # The name of the trigger.
-pattern = "Player (\\w+) joined the game" # Regex pattern that the trigger will have to detect.
-serverlog_ids = [1, 2] # Logs concerned by the trigger. Can be multiple. If not defined, all log files are concerned.
-game = "minecraft" # The game concerned by the trigger.
-function = "on_player_joined" # Function called when triggered.
+name = "doing_tests" # Name of the trigger
+game = "minecraft" # Game concerned by the trigger (Not set = All and any game)
+pattern = "Th1s 1s 4 7e57" # Regex partern triggering the action function
+serverlog_ids = [1] # Server ids concerned by the trigger (Not set = All and any server)
+function = "on_test" # Function called in the action crate
 
 [[trigger]]
 name = "player_joined"
 game = "minecraft"
-server_place_ids = [1, 2]
 pattern = "Player (\\w+) joined the game"
+serverlog_ids = [1, 2]
 function = "on_player_joined"
+
+[[trigger]]
+name = "player_left"
+game = "minecraft"
+pattern = "Player (\\w+) left the game"
+function = "on_player_left"

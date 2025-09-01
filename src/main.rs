@@ -1,5 +1,6 @@
 mod config; // Import config module
 mod log_watcher;
+mod actions;
 
 /**
 Entry point of Otternel

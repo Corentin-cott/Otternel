@@ -1,10 +1,12 @@
-// src/log_watcher.rs
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
 use std::sync::mpsc::channel;
 use std::thread;
+use regex::Regex;
+use serde::Deserialize;
+use crate::actions;
 
 use notify::{
     Config as NotifyConfig, Event, Error as NotifyError, RecommendedWatcher, RecursiveMode, Watcher,
@@ -52,7 +54,7 @@ fn decode_log_bytes(bytes: &[u8]) -> String {
 }
 
 /// This function monitors a folder for `.log` files using file system notifications.
-/// It prints the content of newly created or modified `.log` files, and tracks the last
+/// It prints the content of newly created or modified `.log` files and tracks the last
 /// read position in the file to ensure only new additions are read subsequently. Deleted
 /// `.log` files are also handled by removing them from the internal tracking state.
 ///
@@ -68,8 +70,9 @@ fn decode_log_bytes(bytes: &[u8]) -> String {
 ///
 /// # Behavior
 ///
-/// 1. Reads the initial content of all `.log` files within the folder upon starting.
-/// 2. Listens for file system events, such as creation, modification, or deletion of `.log` files.
+/// 1. Loads the triggers from the `triggers.toml` file.
+/// 2. Reads the initial content of all `.log` files within the folder upon starting.
+/// 3. Listens for file system events, such as creation, modification, or deletion of `.log` files.
 /// - For created or modified `.log` files, it prints the new content appended to the files.
 /// - Removes deleted `.log` files from the tracking state.
 /// - Handles errors, such as unable to read a file or watcher errors, and retries the watcher.
@@ -87,6 +90,34 @@ pub fn watch_serverlogs(folder: &str) -> Result<(), NotifyError> {
         return Err(NotifyError::generic(&format!("Folder {} does not exist", folder.display())));
     }
 
+    // Load the triggers from the triggers.toml file at the root of the project
+    #[derive(Deserialize)]
+    struct Trigger { name: Option<String>, pattern: String, function: String }
+    #[derive(Deserialize)]
+    struct TriggerFile { trigger: Vec<Trigger> }
+
+    let compiled_triggers: Vec<(Regex, String)> = (|| {
+        let content = std::fs::read_to_string("triggers.toml").ok()?;
+        let tf: TriggerFile = toml::from_str(&content).ok()?;
+        let mut out = Vec::new();
+        for t in tf.trigger {
+            match Regex::new(&t.pattern) {
+                Ok(re) => out.push((re, t.function)),
+                Err(e) => eprintln!(
+                    "Invalid regex in trigger '{}': {} ({})",
+                    t.name.unwrap_or_default(),
+                    t.pattern,
+                    e
+                ),
+            }
+        }
+        Some(out)
+    })().unwrap_or_else(|| {
+        eprintln!("No triggers loaded (missing or invalid triggers.toml)");
+        Vec::new()
+    });
+    println!("Loaded {} triggers", compiled_triggers.len());
+
     // Maps each file path to its last read offset by storing its byte position
     let mut positions: HashMap<PathBuf, u64> = HashMap::new();
 
@@ -102,6 +133,14 @@ pub fn watch_serverlogs(folder: &str) -> Result<(), NotifyError> {
                             let contents = decode_log_bytes(&bytes);
                             if !contents.is_empty() {
                                 println!("--- {} (initial) ---\n{}", path.display(), contents);
+                                // Run the triggers on the initial content
+                                for line in contents.lines() {
+                                    for (re, func) in &compiled_triggers {
+                                        if re.is_match(line) {
+                                            actions::dispatch(func, line);
+                                        }
+                                    }
+                                }
                             }
                         }
                         if let Ok(pos) = f.seek(SeekFrom::Current(0)) {
@@ -113,7 +152,7 @@ pub fn watch_serverlogs(folder: &str) -> Result<(), NotifyError> {
             }
         }
     }
-    
+
     // Create the watcher and start watching the folder
     let (tx, rx) = channel::<Result<Event, NotifyError>>();
     let mut watcher: RecommendedWatcher = RecommendedWatcher::new(move |res| {
@@ -139,7 +178,7 @@ pub fn watch_serverlogs(folder: &str) -> Result<(), NotifyError> {
                     match &event.kind {
                         // When a .log file is created or modified, we read its new content
                         EventKind::Create(_) | EventKind::Modify(_) => {
-                            if let Err(e) = read_new(path, &mut positions) {
+                            if let Err(e) = read_new(path, &mut positions, &compiled_triggers) {
                                 eprintln!("Error reading {}: {}", path.display(), e);
                             }
                         }
@@ -192,7 +231,7 @@ pub fn watch_serverlogs(folder: &str) -> Result<(), NotifyError> {
 /// - The function assumes that the file may be appended over time and reads any new content since the last recorded position.
 /// - Handles log rotation or truncation scenarios by resetting the read position to the start of the file.
 ///
-fn read_new(path: &PathBuf, positions: &mut HashMap<PathBuf, u64>) -> std::io::Result<()> {
+fn read_new(path: &PathBuf, positions: &mut HashMap<PathBuf, u64>, compiled_triggers: &[(Regex, String)]) -> std::io::Result<()> {
     let mut f = File::open(path)?;
     let metadata = f.metadata()?;
     let len = metadata.len();
@@ -217,6 +256,14 @@ fn read_new(path: &PathBuf, positions: &mut HashMap<PathBuf, u64>) -> std::io::R
     // Display the new content to stdout if it's not empty
     if !buf.is_empty() {
         println!("--- {} (appended) ---\n{}", path.display(), buf);
+        // Déclencher les triggers ligne par ligne
+        for line in buf.lines() {
+            for (re, func) in compiled_triggers {
+                if re.is_match(line) {
+                    actions::dispatch(func, line);
+                }
+            }
+        }
     }
 
     // Update the position in the positions map with the new seek position after reading
