@@ -27,8 +27,8 @@ use notify::{
 ///
 /// # Behavior
 ///
-/// - Reads the initial content of all `.log` files within the folder upon starting.
-/// - Listens for file system events, such as creation, modification, or deletion of `.log` files.
+/// 1. Reads the initial content of all `.log` files within the folder upon starting.
+/// 2. Listens for file system events, such as creation, modification, or deletion of `.log` files.
 /// - For created or modified `.log` files, it prints the new content appended to the files.
 /// - Removes deleted `.log` files from the tracking state.
 /// - Handles errors, such as unable to read a file or watcher errors, and retries the watcher.
@@ -40,17 +40,6 @@ use notify::{
 /// - If the specified folder does not exist, it returns a generic `NotifyError`.
 /// - Any errors inherent to `notify` library operations, such as watcher setup or event handling, are returned.
 ///
-/// # Example
-///
-/// ```rust
-/// use your_crate::watch_serverlogs;
-///
-/// fn main() {
-///     if let Err(e) = watch_serverlogs("/path/to/server/logs") {
-///         eprintln!("Error watching server logs: {}", e);
-///     }
-/// }
-/// ```
 pub fn watch_serverlogs(folder: &str) -> Result<(), NotifyError> {
     let folder = PathBuf::from(folder);
     if !folder.exists() { // We check that the folder exists
@@ -80,8 +69,7 @@ pub fn watch_serverlogs(folder: &str) -> Result<(), NotifyError> {
             }
         }
     }
-
-
+    
     // Create the watcher and start watching the folder
     let (tx, rx) = channel::<Result<Event, NotifyError>>();
     let mut watcher: RecommendedWatcher = RecommendedWatcher::new(move |res| {
@@ -155,19 +143,6 @@ pub fn watch_serverlogs(folder: &str) -> Result<(), NotifyError> {
 /// 4. Seeks to the determined position in the file and reads the content from there.
 /// 5. Displays the newly appended content (if any) to `stdout` prefixed with metadata.
 /// 6. Updates the position in the `positions` map with the new seek position after reading.
-///
-/// # Example
-/// ```rust
-/// use std::collections::HashMap;
-/// use std::path::PathBuf;
-///
-/// fn main() -> std::io::Result<()> {
-///     let mut positions = HashMap::new();
-///     let filepath = PathBuf::from("example.log");
-///     read_new(&filepath, &mut positions)?;
-///     Ok(())
-/// }
-/// ```
 ///
 /// # Notes
 /// - The function assumes that the file may be appended over time and reads any new content since the last recorded position.

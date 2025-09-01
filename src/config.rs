@@ -4,7 +4,6 @@ use serde::Deserialize;
 // Each field corresponds to one environment variable
 #[derive(Deserialize, Debug)]
 pub struct Config {
-    pub database_url: String,
     pub serverlog_folder: String,
 }
 
