@@ -22,7 +22,7 @@ fn main() {
         Ok(cfg) => {
             println!("Config loaded successfully: {}", cfg.serverlog_folder);
             
-            // Lancer le watcher — la fonction est bloquante et tourne indéfiniment
+            // Start the watcher — the function is blocking and runs indefinitely
             if let Err(err) = log_watcher::watch_serverlogs(&cfg.serverlog_folder) {
                 eprintln!("Log watcher failed: {}", err);
             }

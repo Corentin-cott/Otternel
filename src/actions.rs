@@ -27,15 +27,33 @@ pub fn dispatch(function: &str, line: &str) {
 }
 
 // Actions
+pub fn on_test(line: &str) {
+    println!("[action] on_test triggered with line: {}", line);
+}
 
 pub fn on_player_joined(line: &str) {
     println!("[action] on_player_joined triggered with line: {}", line);
+
+    // Send webhook if enabled via environment config
+    if let Ok(cfg) = crate::config::Config::from_env() {
+        let activated = cfg.mineotter_bot_webhook_activated.trim();
+        if activated.eq_ignore_ascii_case("true") && !cfg.mineotter_bot_webhook_url.trim().is_empty() {
+            // Adjust the format as needed on the webhook side.
+            let body = serde_json::json!({
+                "content": format!("on_player_joined: {}", line)
+            });
+            let resp = ureq::post(cfg.mineotter_bot_webhook_url.trim())
+                .set("Content-Type", "application/json")
+                .send_json(body);
+            if let Err(e) = resp {
+                eprintln!("[action] webhook send error: {}", e);
+            }
+        }
+    } else {
+        eprintln!("[action] could not load config for webhook");
+    }
 }
 
 pub fn on_player_left(line: &str) {
     println!("[action] on_player_left triggered with line: {}", line);
-}
-
-pub fn on_test(line: &str) {
-    println!("[action] on_test triggered with line: {}", line);
 }
