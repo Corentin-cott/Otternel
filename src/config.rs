@@ -7,6 +7,7 @@ pub struct Config {
     pub serverlog_folder: String,
     pub mineotter_bot_webhook_activated: String,
     pub mineotter_bot_webhook_url: String,
+    pub database_url: String,
 }
 
 impl Config {
