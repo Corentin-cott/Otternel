@@ -34,9 +34,13 @@ fn on_test(line: &str) {
 fn on_player_joined(line: &str) {
     println!("[action] on_player_joined triggered with line: {}", line);
 
-    if let Err(e) = crate::services::webhook_discord::send_discord_content(
-        "mineotter",
+    if let Err(e) = crate::services::webhook_discord::send_discord_embed(
+        "otternel",
         &format!("on_player_joined: {}", line),
+        "Player joined",
+        "https://antredesloutres.fr/",
+        0x000000,
+        "",
     ) {
         eprintln!("[action] {e}");
     }
