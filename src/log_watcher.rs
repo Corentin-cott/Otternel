@@ -120,45 +120,6 @@ pub fn watch_serverlogs(folder: &str) -> Result<(), NotifyError> {
 
     // Maps each file path to its last read offset by storing its byte position
     let mut positions: HashMap<PathBuf, u64> = HashMap::new();
-
-    /* Read the initial content of all log files | Not needed, we only need to read new content
-
-    if let Ok(entries) = std::fs::read_dir(&folder) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) == Some("log") {
-                match File::open(&path) {
-                    Ok(mut f) => {
-                        let mut bytes = Vec::new();
-                        if f.read_to_end(&mut bytes).is_ok() {
-                            let contents = decode_log_bytes(&bytes);
-                            if !contents.is_empty() {
-                                println!("--- {} (initial) ---\n{}", path.display(), contents);
-                                // Run the triggers on the initial content
-                                let serverlog_id = path.file_stem().and_then(|s| s.to_str()).and_then(|s| s.parse::<u32>().ok());
-                                for line in contents.lines() {
-                                    for (re, func, ids_opt) in &compiled_triggers {
-                                        if re.is_match(line) {
-                                            if let Some(id) = serverlog_id {
-                                                if ids_opt.as_ref().map(|ids| ids.contains(&id)).unwrap_or(true) {
-                                                    actions::dispatch(func, line);
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        if let Ok(pos) = f.seek(SeekFrom::Current(0)) {
-                            positions.insert(path.clone(), pos);
-                        }
-                    }
-                    Err(err) => eprintln!("Failed to open {}: {}", path.display(), err),
-                }
-            }
-        }
-    }
-    */
     
     // Create the watcher and start watching the folder
     let (tx, rx) = channel::<Result<Event, NotifyError>>();
@@ -270,7 +231,7 @@ fn read_new(path: &PathBuf, positions: &mut HashMap<PathBuf, u64>, compiled_trig
                 if re.is_match(line) {
                     if let Some(id) = serverlog_id {
                         if ids_opt.as_ref().map(|ids| ids.contains(&id)).unwrap_or(true) {
-                            actions::dispatch(func, line);
+                            actions::dispatch(func, line, id);
                         }
                     }
                 }
