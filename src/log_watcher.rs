@@ -221,26 +221,44 @@ fn read_new(path: &PathBuf, positions: &mut HashMap<PathBuf, u64>, compiled_trig
     f.read_to_end(&mut bytes)?;
     let buf = decode_log_bytes(&bytes);
 
-    // Display the new content to stdout if it's not empty
+    // Only proceed if there is any new text
     if !buf.is_empty() {
-        println!("--- {} (appended) ---\n{}", path.display(), buf);
-        // Trigger the actions only if the serverlog_id matches
-        let serverlog_id = path.file_stem().and_then(|s| s.to_str()).and_then(|s| s.parse::<u32>().ok());
-        for line in buf.lines() {
+        // Get serverlog_id from file name once
+        let serverlog_id = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .and_then(|s| s.parse::<u32>().ok());
+
+        // Decide which line to use:
+        // - If chunk ends with newline => use last line.
+        // - Else => use the previous line (last complete).
+        let ends_with_newline = buf.ends_with('\n') || buf.ends_with("\r\n");
+        let mut lines = buf.lines().rev();
+
+        let last_line = if ends_with_newline {
+            lines.next()
+        } else {
+            lines.nth(1) // skip the trailing partial, take previous
+        };
+
+        if let (Some(id), Some(line)) = (serverlog_id, last_line) {
+            // Optional: print only the last line for visibility
+            println!("--- {} (last line) ---\n{}", path.display(), line);
+
+            // Match triggers only against the last (complete) line
             for (re, func, ids_opt) in compiled_triggers {
                 if re.is_match(line) {
-                    if let Some(id) = serverlog_id {
-                        if ids_opt.as_ref().map(|ids| ids.contains(&id)).unwrap_or(true) {
-                            actions::dispatch(func, line, id);
-                        }
+                    if ids_opt.as_ref().map(|ids| ids.contains(&id)).unwrap_or(true) {
+                        actions::dispatch(func, line, id);
                     }
                 }
             }
         }
     }
 
-    // Update the position in the position map with the new seek position after reading
+    // Then keep your existing position update:
     let new_pos = f.seek(SeekFrom::Current(0))?;
     positions.insert(path.clone(), new_pos);
+
     Ok(())
 }

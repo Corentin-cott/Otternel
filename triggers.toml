@@ -8,12 +8,13 @@ function = "on_test" # Function called in the action crate
 [[trigger]]
 name = "player_joined"
 game = "minecraft"
-pattern = "Player (\\w+) joined the game"
+pattern = ".* .* .* joined the game"
 serverlog_ids = [1, 2]
 function = "on_player_joined"
 
 [[trigger]]
 name = "player_left"
 game = "minecraft"
-pattern = "Player (\\w+) left the game"
+pattern = ".* .* .* left the game"
+serverlog_ids = [1, 2]
 function = "on_player_left"

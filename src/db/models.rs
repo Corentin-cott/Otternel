@@ -63,3 +63,32 @@ pub struct UtilisateurDiscord {
     pub avatar_url: Option<String>,
     pub vocal_time: u64,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
+pub struct Serveur {
+    pub id: u64,
+    pub nom: String,
+    pub jeu: String,
+    pub version: String,
+    pub modpack: Option<String>,
+    pub modpack_url: Option<String>,
+    pub nom_monde: Option<String>,
+    pub embed_color: Option<String>, // varchar(7)
+    pub contenaire: Option<String>,  // text
+    pub description: String,
+    pub actif: bool,                 // tinyint(1)
+    pub global: bool,                // tinyint(1)
+    pub r#type: Option<String>,      // `type` is reserved in Rust
+    pub image: Option<String>,       // text
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServeurActif {
+    pub id: u64,
+    pub serveurs_id: u64,
+    pub host: String,
+    pub rcon_host: Option<String>,
+    pub rcon_port: String,
+    pub rcon_password: Option<String>,
+}

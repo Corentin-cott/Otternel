@@ -30,6 +30,10 @@ pub fn send_discord_content(webhook_identity: &str, content: &str) -> Result<(),
 
     match resp {
         Ok(_) => Ok(()),
+        Err(ureq::Error::Status(code, mut response)) => {
+            let body = response.into_string().unwrap_or_default();
+            Err(format!("webhook send error: status code {code}, body: {body}"))
+        }
         Err(e) => Err(format!("webhook send error: {e}")),
     }
 }
@@ -40,9 +44,14 @@ pub fn send_discord_content(webhook_identity: &str, content: &str) -> Result<(),
 /// - webhook_identity: Which webhook configuration to use ("otternel", "mineotter", or "multiloutre").
 /// - content: The message content to send to the Discord webhook.
 /// - title: Embed title.
-/// - supertext: Link in the embed title.
-/// - color_rgb: Color of the embed (0x000000..=0xFFFFFF).
+/// - title_hyperlink: Link in the embed title.
+/// - supertext: Description/body of the embed.
+/// - color_rgb: Color of the embed (0x000000..=0xFFFFFF), as a hex string like "#RRGGBB" or "RRGGBB".
 /// - thumbnail_url: URL of the thumbnail image.
+/// - image_url: URL of the main image for the embed (displayed full width below the description).
+/// - footer_image_url: URL of the footer icon.
+/// - footer_text: Footer text.
+/// - timestamp_iso8601: Optional ISO 8601 datetime string to show as embed timestamp (e.g. RFC3339).
 ///
 /// # Returns
 /// Ok(()) if the webhook is sent or disabled; Err(String) if an error occurs while sending.
@@ -54,9 +63,14 @@ pub fn send_discord_embed(
     webhook_identity: &str,
     content: &str,
     title: &str,
+    title_hyperlink: &str,
     supertext: &str,
-    color_rgb: u32,
+    color_rgb: Option<String>,
     thumbnail_url: &str,
+    image_url: &str,
+    footer_image_url: &str,
+    footer_text: &str,
+    timestamp_iso8601: Option<String>,
 ) -> Result<(), String> {
     // Get the webhook configuration
     let (_identity, activated, url) = get_webhook_config(webhook_identity)?;
@@ -64,25 +78,53 @@ pub fn send_discord_embed(
         return Ok(());
     }
 
-    // Format the embed color
-    let color_sanitized = color_rgb & 0x00FF_FFFF;
-
-    // Build the embed
+    // Build the embed without color first
     let mut embed = serde_json::json!({
         "title": title,
         "description": supertext,
-        "color": color_sanitized as i64, // Discord attend un entier
     });
+
+    // Set a hyperlink on the title if provided (Discord uses "url" on the embed)
+    if !title_hyperlink.trim().is_empty() {
+        embed["url"] = serde_json::json!(title_hyperlink);
+    }
+
+    // Sanitize and set color if provided
+    if let Some(c) = color_rgb
+        .as_deref()
+        .and_then(parse_discord_color)
+    {
+        embed["color"] = serde_json::json!(c);
+    }
 
     // Add the thumbnail if there is one
     if !thumbnail_url.trim().is_empty() {
         embed["thumbnail"] = serde_json::json!({ "url": thumbnail_url });
     }
 
+    // Add a main image if provided
+    if !image_url.trim().is_empty() {
+        embed["image"] = serde_json::json!({ "url": image_url });
+    }
+
+    // Add footer if provided
+    if !footer_text.trim().is_empty() || !footer_image_url.trim().is_empty() {
+        let mut footer = serde_json::json!({ "text": footer_text });
+        if !footer_image_url.trim().is_empty() {
+            footer["icon_url"] = serde_json::json!(footer_image_url);
+        }
+        embed["footer"] = footer;
+    }
+
+    // Add timestamp if provided
+    if let Some(ts) = timestamp_iso8601.as_ref().filter(|s| !s.trim().is_empty()) {
+        embed["timestamp"] = serde_json::json!(ts);
+    }
+
     // Build the payload
     let mut payload = serde_json::json!({
         "embeds": [embed],
-        // "allowed_mentions": { "parse": [] } // If uncomment, mentions will be parsed
+        // "allowed_mentions": { "parse": [] } // If uncommented, mentions will be parsed
     });
 
     if !content.trim().is_empty() {
@@ -96,12 +138,14 @@ pub fn send_discord_embed(
 
     match resp {
         Ok(_) => Ok(()),
+        Err(ureq::Error::Status(code, mut response)) => {
+            let body = response.into_string().unwrap_or_default();
+            Err(format!("webhook send error: status code {code}, body: {body}"))
+        }
         Err(e) => Err(format!("webhook send error: {e}")),
     }
 }
 
-/// Retrieves the webhook configuration for a given webhook identity.
-///
 /// # Parameters
 /// * `webhook_identity` - A string slice that identifies the webhook. Supported values are:
 ///     - `"otternel"`
@@ -123,18 +167,6 @@ pub fn send_discord_embed(
 /// # Errors
 /// - Returns `"config error: {error_message}"` if loading configuration from the environment fails.
 /// - Returns `"unknown webhook identity: {webhook_identity}"` for invalid webhook identities.
-///
-/// # Examples
-/// ```rust
-/// match get_webhook_config("otternel") {
-///     Ok((identity, activated, url)) => {
-///         println!("Webhook identity: {}", identity);
-///         println!("Activated: {}", activated);
-///         println!("URL: {}", url);
-///     }
-///     Err(err) => println!("Error: {}", err),
-/// }
-/// ```
 ///
 /// # Notes
 /// This function depends on the `Config` struct defined in the `crate::config` module to retrieve
@@ -163,4 +195,25 @@ fn get_webhook_config(webhook_identity: &str) -> Result<(&'static str, &'static 
         }
         other => Err(format!("unknown webhook identity: {other}")),
     }
+}
+
+/// Parses a Discord color string to a u32 integer.
+/// Accepts formats like:
+/// - "#RRGGBB"
+/// - "0xRRGGBB"
+/// - "RRGGBB"
+/// - decimal "16711680"
+fn parse_discord_color(s: &str) -> Option<u32> {
+    let t = s.trim();
+
+    // If decimal
+    if t.chars().all(|c| c.is_ascii_digit()) {
+        return t.parse::<u32>().ok();
+    }
+
+    // Normalize hex-like strings
+    let t = t.strip_prefix('#').unwrap_or(t);
+    let t = t.strip_prefix("0x").or_else(|| t.strip_prefix("0X")).unwrap_or(t);
+
+    u32::from_str_radix(t, 16).ok()
 }

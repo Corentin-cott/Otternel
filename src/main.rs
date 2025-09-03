@@ -1,5 +1,6 @@
 mod config; // Import config module
 mod log_watcher;
+mod db;
 mod services;
 mod actions;
 
@@ -17,6 +18,8 @@ fn main() {
 *            \\/                \\/           \\/     \\/\
     ");
 
+    // Time of launch
+    println!("Time of Otternel launch: {}\n", chrono::Local::now());
 
     // Try to load configuration from environment variables
     match config::Config::from_env() {
