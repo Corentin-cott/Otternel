@@ -3,6 +3,7 @@ use serde::Deserialize;
 // Each field corresponds to one environment variable
 #[derive(Deserialize, Debug)]
 pub struct Config {
+    pub log_level: String,
     pub database_url: String,
     pub serverlog_folder: String,
     pub otternel_webhook_activated: String,

@@ -1,7 +1,7 @@
 use colored::Colorize;
-use log::{error, info, warn};
-use crate::{db, helper};
-use crate::db::models::Serveur;
+use log::{debug, error, info, warn};
+use crate::{helper};
+use crate::db::models::{JoueurConnectionLog, Serveur};
 
 /// Dispatches a function call based on the input function name. Logs an error message if no function matches.
 ///
@@ -54,6 +54,34 @@ fn on_player_connection_update(line: &str, serverlog_id: u32, co_type: &str) {
         .map(|s| s.trim())
         .filter(|s| !s.is_empty())
         .unwrap_or("Joueur");
+
+    // Load configuration for DB pool before logging player connection
+    let db = match helper::open_database::open_db_from_env() {
+        Some(db) => db,
+        None => {
+            warn!("Could not load DB configuration to resolve active server");
+            return;
+        }
+    };
+
+    // We need to get the player id. If the player isn't in the database, they will be added
+    let player_id = match db.add_and_get_minecraft_player_id(playername) {
+        Ok(id) => id, // Successfully retrieved the player ID
+        Err(err) => {
+            error!("Player {}'s ID couldn't be fetched or added to the database: {}", playername, err);
+            return; // or handle the error appropriately
+        }
+    };
+
+    // We log the player connection in database
+    let log = JoueurConnectionLog {
+        serveur_id: server.id,
+        joueur_id: player_id,
+        date: chrono::Utc::now().naive_utc(),
+    };
+    if let Err(e) = db.insert_joueur_connection_log(&log) {
+        warn!("Failed to insert player connection log: {:?}", e);
+    }
 
     // Send Discord embed with the player's name
     if let Err(e) = helper::webhook_discord::send_discord_embed(
@@ -114,7 +142,7 @@ fn get_server_by_active_server_id(serverlog_id: u32) -> Serveur {
 
     match db.get_server_by_active_server_id(serverlog_id as u64) {
         Ok(Some(s)) => {
-            info!(
+            debug!(
                 "Resolved active server {} -> '{}'",
                 serverlog_id.to_string().green().bold(),
                 s.nom.green().bold()

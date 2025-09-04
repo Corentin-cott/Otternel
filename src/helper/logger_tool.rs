@@ -1,7 +1,17 @@
 use chrono::Local;
 use colored::*;
+use log::LevelFilter;
 
-pub(crate) fn setup_logger() -> Result<(), fern::InitError> {
+pub(crate) fn setup_logger(log_level_str: &str) -> Result<(), fern::InitError> {
+    let level_filter = match log_level_str.to_lowercase().as_str() {
+        "trace" => LevelFilter::Trace,
+        "debug" => LevelFilter::Debug,
+        "info"  => LevelFilter::Info,
+        "warn"  => LevelFilter::Warn,
+        "error" => LevelFilter::Error,
+        _ => LevelFilter::Warn,
+    };
+
     fern::Dispatch::new()
         .format(|out, message, record| {
             let level = match record.level() {
@@ -20,8 +30,11 @@ pub(crate) fn setup_logger() -> Result<(), fern::InitError> {
                 message
             ))
         })
-        .level(log::LevelFilter::Debug)
+        .level(level_filter)
+        .level_for("ureq", LevelFilter::Warn)
+        .level_for("rustls", LevelFilter::Warn)
         .chain(std::io::stdout())
         .apply()?;
+
     Ok(())
 }

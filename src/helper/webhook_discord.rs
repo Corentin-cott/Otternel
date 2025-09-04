@@ -1,43 +1,3 @@
-/// Sends a simple message via Discord Webhook for a specific identity.
-///
-/// # Parameters
-/// - webhook_identity: Which webhook configuration to use ("otternel", "mineotter", or "multiloutre").
-/// - content: The message content to send to the Discord webhook.
-///
-/// # Returns
-/// Ok(()) if the webhook is sent or disabled; Err(String) if an error occurs while sending.
-///
-/// # Errors
-/// Returns an error if configuration fails to load, identity is unknown, or the HTTP request fails.
-///
-pub fn send_discord_content(webhook_identity: &str, content: &str) -> Result<(), String> {
-    // Get the webhook configuration
-    let (_identity, activated, url) = get_webhook_config(webhook_identity)?;
-    if !activated.eq_ignore_ascii_case("true") || url.is_empty() {
-        return Ok(());
-    }
-
-    if !activated.eq_ignore_ascii_case("true") || url.is_empty() {
-        // Treat disabled as a no-op success to avoid spamming callers with errors.
-        return Ok(());
-    }
-
-    let body = serde_json::json!({ "content": content });
-
-    let resp = ureq::post(url)
-        .set("Content-Type", "application/json")
-        .send_json(body);
-
-    match resp {
-        Ok(_) => Ok(()),
-        Err(ureq::Error::Status(code, mut response)) => {
-            let body = response.into_string().unwrap_or_default();
-            Err(format!("webhook send error: status code {code}, body: {body}"))
-        }
-        Err(e) => Err(format!("webhook send error: {e}")),
-    }
-}
-
 /// Sends a Discord embed via a webhook for a specific identity.
 ///
 /// # Parameters
@@ -139,7 +99,7 @@ pub fn send_discord_embed(
 
     match resp {
         Ok(_) => Ok(()),
-        Err(ureq::Error::Status(code, mut response)) => {
+        Err(ureq::Error::Status(code, response)) => {
             let body = response.into_string().unwrap_or_default();
             Err(format!("webhook send error: status code {code}, body: {body}"))
         }
