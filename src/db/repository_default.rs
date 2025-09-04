@@ -6,7 +6,6 @@ pub struct Database {
 }
 
 impl Database {
-
     /// Creates a MySQL connection pool for database operations.
     ///
     /// # Parameters
@@ -29,5 +28,4 @@ impl Database {
     pub fn get_conn(&self) -> Result<PooledConn, mysql::Error> {
         self.pool.get_conn()
     }
-
 }

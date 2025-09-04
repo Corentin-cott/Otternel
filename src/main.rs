@@ -18,19 +18,25 @@ fn main() {
 └ {}\n", chrono::Local::now()
     );
 
-    // Load the logging tool
-    helper::logger_tool::setup_logger().expect("Failed to initialize logger");
-
     // Try to load configuration from environment variables
     match config::Config::from_env() {
         Ok(cfg) => {
+            // Load the logging tool
+            helper::logger_tool::setup_logger(&cfg.log_level)
+                .expect("Failed to initialize logger");
+
             info!("Config loaded successfully");
-            
+
             // Start the watcher — the function is blocking and runs indefinitely
             if let Err(err) = serverlog::log_watcher::watch_serverlogs(&cfg.serverlog_folder) {
                 error!("Log watcher failed: {}", err);
             }
         }
-        Err(err) => error!("Failed to load config: {}", err),
+        Err(err) => {
+            // Initialize a minimal logger to be able to log the error
+            helper::logger_tool::setup_logger("warn")
+                .ok();
+            error!("Failed to load config: {}", err);
+        }
     }
 }
