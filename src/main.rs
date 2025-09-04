@@ -1,21 +1,35 @@
-
 mod config; // Import config module
+mod db;
+mod serverlog;
+mod helper;
 
 /**
 Entry point of Otternel
 */
 fn main() {
+    // Splash screen, it's not useful, but it's cool
+    println!("
+*       _____   __    __                              __
+|      /     \\_/  |__/  |_  ___________  ____   ____ |  |
+|     /   |   \\   __\\   __\\/ __ \\_  __ \\/    \\_/ __ \\|  |
+|    /    |    \\  |  |  | \\  ___/|  | \\/   |  \\  ___/|  |__
+|    \\_______  /__|  |__|  \\___  >__|  |___|  /\\___  >____/
+*            \\/                \\/           \\/     \\/\
+    ");
+
+    // Time of launch
+    println!("Time of Otternel launch: {}\n", chrono::Local::now());
+
     // Try to load configuration from environment variables
     match config::Config::from_env() {
-        // Ok = If successful
         Ok(cfg) => {
-            println!("Config loaded successfully:");
-            println!("DATABASE_URL: {}", cfg.database_url);
-            println!("SERVERLOG_FOLDER: {}", cfg.serverlog_folder);
+            println!("Config loaded successfully: {}", cfg.serverlog_folder);
+            
+            // Start the watcher — the function is blocking and runs indefinitely
+            if let Err(err) = serverlog::log_watcher::watch_serverlogs(&cfg.serverlog_folder) {
+                eprintln!("Log watcher failed: {}", err);
+            }
         }
-        // Err = If failed
-        Err(err) => {
-            eprintln!("Failed to load config: {}", err);
-        }
+        Err(err) => eprintln!("Failed to load config: {}", err),
     }
 }

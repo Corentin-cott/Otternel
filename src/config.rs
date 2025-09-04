@@ -6,6 +6,12 @@ use serde::Deserialize;
 pub struct Config {
     pub database_url: String,
     pub serverlog_folder: String,
+    pub otternel_webhook_activated: String,
+    pub otternel_webhook_url: String,
+    pub mineotter_bot_webhook_activated: String,
+    pub mineotter_bot_webhook_url: String,
+    pub multiloutre_bot_webhook_activated: String,
+    pub multiloutre_bot_webhook_url: String,
 }
 
 impl Config {

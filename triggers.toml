@@ -1,0 +1,20 @@
+[[trigger]]
+name = "doing_tests" # Name of the trigger
+game = "minecraft" # Game concerned by the trigger (Not set = All and any game)
+pattern = "Th1s 1s 4 7e57" # Regex partern triggering the action function
+serverlog_ids = [1] # Server ids concerned by the trigger (Not set = All and any server)
+function = "on_test" # Function called in the action crate
+
+[[trigger]]
+name = "player_joined"
+game = "minecraft"
+pattern = ".* .* .* joined the game"
+serverlog_ids = [1, 2]
+function = "on_player_joined"
+
+[[trigger]]
+name = "player_left"
+game = "minecraft"
+pattern = ".* .* .* left the game"
+serverlog_ids = [1, 2]
+function = "on_player_left"
