@@ -12,6 +12,8 @@ regex = "1"
 toml = "0.8"
 ureq = { version = "2", default-features = false, features = ["json", "tls"] }
 serde_json = "1"
+fern = "0.6"
+log = "0.4"
+colored = "2"
 chrono = { version = "0.4.41", features = ["serde"] }
-chrono-tz = "0.8"
 mysql = "26.0.1"

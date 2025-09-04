@@ -1,4 +1,7 @@
-use crate::helper;
+use colored::Colorize;
+use log::{error, info, warn};
+use crate::{db, helper};
+use crate::db::models::Serveur;
 
 /// Dispatches a function call based on the input function name. Logs an error message if no function matches.
 ///
@@ -22,44 +25,22 @@ use crate::helper;
 ///
 pub fn dispatch(function: &str, line: &str, serverlog_id: u32) {
     match function {
-        "on_test" => on_test(line, serverlog_id),
+        "on_test" => on_test(serverlog_id),
         "on_player_message" => on_player_message(line, serverlog_id),
         "on_player_joined" => on_player_connection_update(line, serverlog_id, "rejoint"),
         "on_player_left" => on_player_connection_update(line, serverlog_id, "quitté"),
-        _ => eprintln!("Unknown action function: {}", function),
+        _ => warn!("Unknown action function: {}", function.yellow()),
     }
 }
 
 // Actions
-fn on_test(line: &str, serverlog_id: u32) {
-    println!("[action] on_test triggered with serverlog_id={} line: {}", serverlog_id, line);
+fn on_test(serverlog_id: u32) {
+    info!("{} triggered with serverlog_id={}", "on_test".green().bold(), serverlog_id.to_string().green().bold());
 }
 
 fn on_player_connection_update(line: &str, serverlog_id: u32, co_type: &str) {
-    // Load configuration for DB pool
-    let db = match helper::open_database::open_db_from_env() {
-        Some(db) => db,
-        None => {
-            eprintln!("[error] could not load configuration to resolve active server");
-            return;
-        }
-    };
-
     // Resolve active server at serverlog_id
-    let server = match db.get_server_by_active_server_id(serverlog_id as u64) {
-        Ok(Some(s)) => {
-            println!("[action] resolved active server {} -> '{}'", serverlog_id, s.nom);
-            s
-        }
-        Ok(None) => {
-            eprintln!("[action] no server found for active server id {}", serverlog_id);
-            return;
-        }
-        Err(e) => {
-            eprintln!("[action] error fetching server for active server id {}: {}", serverlog_id, e);
-            return;
-        }
-    };
+    let server:Serveur = get_server_by_active_server_id(serverlog_id);
 
     // Extract playername from a line like:
     // "[00:00:000] [Server thread/INFO]: playername joined/left the game"
@@ -72,7 +53,7 @@ fn on_player_connection_update(line: &str, serverlog_id: u32, co_type: &str) {
         })
         .map(|s| s.trim())
         .filter(|s| !s.is_empty())
-        .unwrap_or("Un joueur");
+        .unwrap_or("Joueur");
 
     // Send Discord embed with the player's name
     if let Err(e) = helper::webhook_discord::send_discord_embed(
@@ -89,53 +70,22 @@ fn on_player_connection_update(line: &str, serverlog_id: u32, co_type: &str) {
         Some(chrono::Utc::now()
             .to_rfc3339())
     ) {
-        eprintln!("[action] {e}");
+        error!("{e}");
     }
 }
 
 fn on_player_message(line: &str, serverlog_id: u32) {
-    // Load configuration for DB pool
-    let cfg = match crate::config::Config::from_env() {
-        Ok(cfg) => cfg,
-        Err(_) => {
-            eprintln!("[action] could not load configuration to resolve active server");
-            return;
-        }
-    };
-
-    // Create DB pool
-    let db = match crate::db::repository_default::Database::new(&cfg.database_url) {
-        Ok(db) => db,
-        Err(e) => {
-            eprintln!("[action] could not create DB pool: {:?}", e);
-            return;
-        }
-    };
-
     // Resolve active server at serverlog_id
-    let server = match db.get_server_by_active_server_id(serverlog_id as u64) {
-        Ok(Some(s)) => {
-            println!("[action] resolved active server {} -> '{}'", serverlog_id, s.nom);
-            s
-        }
-        Ok(None) => {
-            eprintln!("[action] no server found for active server id {}", serverlog_id);
-            return;
-        }
-        Err(e) => {
-            eprintln!("[action] error fetching server for active server id {}: {}", serverlog_id, e);
-            return;
-        }
-    };
+    let server:Serveur = get_server_by_active_server_id(serverlog_id);
 
     // TODO : Extrat player name from player message in line, then send it in embed
 
     // Temporary placeholder values
-    let playername = "Un joueur";
-    let message = "Un message";
+    let playername = "un joueur";
+    let message = "un message";
 
     // Send Discord embed with the player's message
-    if let Err(e) = crate::helper::webhook_discord::send_discord_embed(
+    if let Err(e) = helper::webhook_discord::send_discord_embed(
         "otternel",
         message,
         playername,
@@ -148,6 +98,39 @@ fn on_player_message(line: &str, serverlog_id: u32) {
         &format!("Message de {}", server.nom),
         None
     ) {
-        eprintln!("[action] {e}");
+        error!("{e}");
+    }
+}
+
+fn get_server_by_active_server_id(serverlog_id: u32) -> Serveur {
+    // Load configuration for DB pool
+    let db = match helper::open_database::open_db_from_env() {
+        Some(db) => db,
+        None => {
+            warn!("Could not load DB configuration to resolve active server");
+            return Serveur::default();
+        }
+    };
+
+    match db.get_server_by_active_server_id(serverlog_id as u64) {
+        Ok(Some(s)) => {
+            info!(
+                "Resolved active server {} -> '{}'",
+                serverlog_id.to_string().green().bold(),
+                s.nom.green().bold()
+            );
+            s
+        }
+        Ok(None) => {
+            error!("No server found for active server id {}", serverlog_id);
+            Serveur::default()
+        }
+        Err(e) => {
+            error!(
+                "Error fetching server for active server id {}: {}",
+                serverlog_id, e
+            );
+            Serveur::default()
+        }
     }
 }
