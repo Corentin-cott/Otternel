@@ -3,33 +3,34 @@ mod db;
 mod serverlog;
 mod helper;
 
+use log::{info, error};
+
 /**
 Entry point of Otternel
 */
 fn main() {
     // Splash screen, it's not useful, but it's cool
-    println!("
-*       _____   __    __                              __
-|      /     \\_/  |__/  |_  ___________  ____   ____ |  |
-|     /   |   \\   __\\   __\\/ __ \\_  __ \\/    \\_/ __ \\|  |
-|    /    |    \\  |  |  | \\  ___/|  | \\/   |  \\  ___/|  |__
-|    \\_______  /__|  |__|  \\___  >__|  |___|  /\\___  >____/
-*            \\/                \\/           \\/     \\/\
-    ");
+    println!("\n
+*  _____ _   _                   _
+| |     | |_| |_ ___ ___ ___ ___| |
+| |  |  |  _|  _| -_|  _|   | -_| |
+| |_____|_| |_| |___|_| |_|_|___|_|
+└ {}\n", chrono::Local::now()
+    );
 
-    // Time of launch
-    println!("Time of Otternel launch: {}\n", chrono::Local::now());
+    // Load the logging tool
+    helper::logger_tool::setup_logger().expect("Failed to initialize logger");
 
     // Try to load configuration from environment variables
     match config::Config::from_env() {
         Ok(cfg) => {
-            println!("Config loaded successfully: {}", cfg.serverlog_folder);
+            info!("Config loaded successfully");
             
             // Start the watcher — the function is blocking and runs indefinitely
             if let Err(err) = serverlog::log_watcher::watch_serverlogs(&cfg.serverlog_folder) {
-                eprintln!("Log watcher failed: {}", err);
+                error!("Log watcher failed: {}", err);
             }
         }
-        Err(err) => eprintln!("Failed to load config: {}", err),
+        Err(err) => error!("Failed to load config: {}", err),
     }
 }

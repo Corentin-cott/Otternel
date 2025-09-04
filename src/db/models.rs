@@ -74,13 +74,13 @@ pub struct Serveur {
     pub modpack: Option<String>,
     pub modpack_url: Option<String>,
     pub nom_monde: Option<String>,
-    pub embed_color: Option<String>, // varchar(7)
-    pub contenaire: Option<String>,  // text
+    pub embed_color: Option<String>,
+    pub contenaire: Option<String>,
     pub description: String,
-    pub actif: bool,                 // tinyint(1)
-    pub global: bool,                // tinyint(1)
-    pub r#type: Option<String>,      // `type` is reserved in Rust
-    pub image: Option<String>,       // text
+    pub actif: bool,
+    pub global: bool,
+    pub r#type: Option<String>,
+    pub image: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

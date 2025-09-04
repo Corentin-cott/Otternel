@@ -1,6 +1,6 @@
 pub mod models;
 pub mod repository_default;
-pub mod repository_serveurs;
+pub mod repository_servers;
 use crate::config::Config;
 
 // Expose Database type under `db::repository::Database`

@@ -4,6 +4,8 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
 use std::sync::mpsc::channel;
 use std::thread;
+use colored::Colorize;
+use log::{debug, error, info, warn};
 use regex::Regex;
 use serde::Deserialize;
 
@@ -103,7 +105,7 @@ pub fn watch_serverlogs(folder: &str) -> Result<(), NotifyError> {
         for t in tf.trigger {
             match Regex::new(&t.pattern) {
                 Ok(re) => out.push((re, t.function, t.serverlog_ids)),
-                Err(e) => eprintln!(
+                Err(e) => error!(
                     "Invalid regex in trigger '{}': {} ({})",
                     t.name.unwrap_or_default(),
                     t.pattern,
@@ -113,10 +115,9 @@ pub fn watch_serverlogs(folder: &str) -> Result<(), NotifyError> {
         }
         Some(out)
     })().unwrap_or_else(|| {
-        eprintln!("No triggers loaded (missing or invalid triggers.toml)");
+        error!("No triggers loaded (missing or invalid triggers.toml)");
         Vec::new()
     });
-    println!("Loaded {} triggers", compiled_triggers.len());
 
     // Maps each file path to its last read offset by storing its byte position
     let mut positions: HashMap<PathBuf, u64> = HashMap::new();
@@ -132,7 +133,7 @@ pub fn watch_serverlogs(folder: &str) -> Result<(), NotifyError> {
     watcher.watch(&folder, RecursiveMode::NonRecursive)?;
 
     // Loop forever, reading new content of log files as they are appended
-    println!("Watching folder {} for .log changes...", folder.display());
+    info!("Watching folder {} for .log changes with {} triggers", folder.display().to_string().green().bold(), compiled_triggers.len().to_string().green().bold());
     loop {
         match rx.recv() {
             Ok(Ok(event)) => {
@@ -147,25 +148,25 @@ pub fn watch_serverlogs(folder: &str) -> Result<(), NotifyError> {
                         // When a .log file is created or modified, we read its new content
                         EventKind::Create(_) | EventKind::Modify(_) => {
                             if let Err(e) = read_new(path, &mut positions, &compiled_triggers) {
-                                eprintln!("Error reading {}: {}", path.display(), e);
+                                error!("Error reading {}: {}", path.display(), e);
                             }
                         }
                         // When a .log file is removed, we remove it from the position map
                         EventKind::Remove(_) => {
                             positions.remove(path);
-                            println!("File removed: {}", path.display());
+                            warn!("File removed: {}", path.display());
                         }
                         _ => {}
                     }
                 }
             }
             // The file was read, but an error occurred
-            Ok(Err(e)) => eprintln!("Watcher error: {}", e),
+            Ok(Err(e)) => error!("Watcher error: {}", e),
             // The file could not be read
             Err(e) => {
-                eprintln!("Watcher channel receive error: {}", e);
+                error!("Watcher channel receive error: {}", e);
                 const WAIT_TIME: u64 = 1;
-                println!("Retrying in {} second...", WAIT_TIME);
+                info!("Retrying in {} second...", WAIT_TIME.to_string().green().bold());
                 thread::sleep(std::time::Duration::from_secs(WAIT_TIME));
             }
         }
@@ -208,7 +209,7 @@ fn read_new(path: &PathBuf, positions: &mut HashMap<PathBuf, u64>, compiled_trig
     // Check if the file was truncated or rotated
     if len < last {
         // Truncated or rotated; reset the position to the start of the file
-        eprintln!("File {} was truncated/rotated; reading from start", path.display());
+        warn!("File {} was truncated/rotated; reading from start", path.display());
         positions.insert(path.clone(), 0);
     }
 
@@ -242,8 +243,9 @@ fn read_new(path: &PathBuf, positions: &mut HashMap<PathBuf, u64>, compiled_trig
         };
 
         if let (Some(id), Some(line)) = (serverlog_id, last_line) {
-            // Optional: print only the last line for visibility
-            println!("--- {} (last line) ---\n{}", path.display(), line);
+            // Debug: print only the last line for visibility
+            debug!("{} (last line)", path.display().to_string().green().bold());
+            debug!("{}", line.to_string().bright_blue().italic());
 
             // Match triggers only against the last (complete) line
             for (re, func, ids_opt) in compiled_triggers {
