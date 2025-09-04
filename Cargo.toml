@@ -17,3 +17,8 @@ log = "0.4"
 colored = "2"
 chrono = { version = "0.4.41", features = ["serde"] }
 mysql = "26.0.1"
+futures-util = "0.3.31"
+tokio = { version = "1.47.1", features = ["rt", "rt-multi-thread", "macros"] }
+anyhow = "1.0.99"
+tar = "0.4.44"
+bollard = "0.19.2"
