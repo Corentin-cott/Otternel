@@ -26,13 +26,3 @@ pub struct Serveur {
     pub r#type: Option<String>,
     pub image: Option<String>,
 }
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ServeurActif {
-    pub id: u64,
-    pub serveurs_id: u64,
-    pub host: String,
-    pub rcon_host: Option<String>,
-    pub rcon_port: String,
-    pub rcon_password: Option<String>,
-}

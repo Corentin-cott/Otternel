@@ -110,7 +110,7 @@ fn on_player_message(line: &str, serverlog_id: u32) {
 
     // Temporary placeholder values
     let playername = "un joueur";
-    let message = "un message";
+    let message = line;
 
     // Send Discord embed with the player's message
     if let Err(e) = helper::webhook_discord::send_discord_embed(
