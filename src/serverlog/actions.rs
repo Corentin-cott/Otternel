@@ -1,4 +1,4 @@
-use crate::db::models::Serveur;
+use crate::helper;
 
 /// Dispatches a function call based on the input function name. Logs an error message if no function matches.
 ///
@@ -22,9 +22,10 @@ use crate::db::models::Serveur;
 ///
 pub fn dispatch(function: &str, line: &str, serverlog_id: u32) {
     match function {
+        "on_test" => on_test(line, serverlog_id),
+        "on_player_message" => on_player_message(line, serverlog_id),
         "on_player_joined" => on_player_connection_update(line, serverlog_id, "rejoint"),
         "on_player_left" => on_player_connection_update(line, serverlog_id, "quitté"),
-        "on_test" => on_test(line, serverlog_id),
         _ => eprintln!("Unknown action function: {}", function),
     }
 }
@@ -36,19 +37,10 @@ fn on_test(line: &str, serverlog_id: u32) {
 
 fn on_player_connection_update(line: &str, serverlog_id: u32, co_type: &str) {
     // Load configuration for DB pool
-    let cfg = match crate::config::Config::from_env() {
-        Ok(cfg) => cfg,
-        Err(_) => {
-            eprintln!("[action] could not load configuration to resolve active server");
-            return;
-        }
-    };
-
-    // Create DB pool
-    let db = match crate::db::repository_players_users::Database::new(&cfg.database_url) {
-        Ok(db) => db,
-        Err(e) => {
-            eprintln!("[action] could not create DB pool: {:?}", e);
+    let db = match helper::open_database::open_db_from_env() {
+        Some(db) => db,
+        None => {
+            eprintln!("[error] could not load configuration to resolve active server");
             return;
         }
     };
@@ -83,7 +75,7 @@ fn on_player_connection_update(line: &str, serverlog_id: u32, co_type: &str) {
         .unwrap_or("Un joueur");
 
     // Send Discord embed with the player's name
-    if let Err(e) = crate::services::webhook_discord::send_discord_embed(
+    if let Err(e) = helper::webhook_discord::send_discord_embed(
         "otternel",
         "",
         playername,
@@ -112,7 +104,7 @@ fn on_player_message(line: &str, serverlog_id: u32) {
     };
 
     // Create DB pool
-    let db = match crate::db::repository_players_users::Database::new(&cfg.database_url) {
+    let db = match crate::db::repository_default::Database::new(&cfg.database_url) {
         Ok(db) => db,
         Err(e) => {
             eprintln!("[action] could not create DB pool: {:?}", e);
@@ -143,7 +135,7 @@ fn on_player_message(line: &str, serverlog_id: u32) {
     let message = "Un message";
 
     // Send Discord embed with the player's message
-    if let Err(e) = crate::services::webhook_discord::send_discord_embed(
+    if let Err(e) = crate::helper::webhook_discord::send_discord_embed(
         "otternel",
         message,
         playername,

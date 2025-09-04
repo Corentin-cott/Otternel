@@ -1,8 +1,7 @@
 mod config; // Import config module
-mod log_watcher;
 mod db;
-mod services;
-mod actions;
+mod serverlog;
+mod helper;
 
 /**
 Entry point of Otternel
@@ -27,7 +26,7 @@ fn main() {
             println!("Config loaded successfully: {}", cfg.serverlog_folder);
             
             // Start the watcher — the function is blocking and runs indefinitely
-            if let Err(err) = log_watcher::watch_serverlogs(&cfg.serverlog_folder) {
+            if let Err(err) = serverlog::log_watcher::watch_serverlogs(&cfg.serverlog_folder) {
                 eprintln!("Log watcher failed: {}", err);
             }
         }

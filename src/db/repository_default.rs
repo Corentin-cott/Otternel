@@ -1,13 +1,5 @@
-use mysql::{prelude::Queryable, params, PooledConn};
+use mysql::{PooledConn};
 use mysql::Pool;
-
-use crate::db::models::{
-    Joueur,
-    JoueurStats,
-    JoueurConnectionLog,
-    BadgeJoueur,
-    UtilisateurDiscord,
-};
 
 pub struct Database {
     pool: Pool,

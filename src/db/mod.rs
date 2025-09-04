@@ -1,12 +1,11 @@
 pub mod models;
-pub mod repository_players_users;
+pub mod repository_default;
 pub mod repository_serveurs;
-
 use crate::config::Config;
 
 // Expose Database type under `db::repository::Database`
 pub mod repository {
-    pub use super::repository_players_users::Database;
+    pub use super::repository_default::Database;
 }
 
 // Initializes the Database from the environment variable

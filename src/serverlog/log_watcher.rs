@@ -6,11 +6,11 @@ use std::sync::mpsc::channel;
 use std::thread;
 use regex::Regex;
 use serde::Deserialize;
-use crate::actions;
 
 use notify::{
     Config as NotifyConfig, Event, Error as NotifyError, RecommendedWatcher, RecursiveMode, Watcher,
 };
+use crate::serverlog;
 
 /// Decodes a sequence of bytes into a `String`, attempting to interpret the input as UTF-8 or UTF-16 with a fallback mechanism.
 ///
@@ -249,7 +249,7 @@ fn read_new(path: &PathBuf, positions: &mut HashMap<PathBuf, u64>, compiled_trig
             for (re, func, ids_opt) in compiled_triggers {
                 if re.is_match(line) {
                     if ids_opt.as_ref().map(|ids| ids.contains(&id)).unwrap_or(true) {
-                        actions::dispatch(func, line, id);
+                        serverlog::actions::dispatch(func, line, id);
                     }
                 }
             }

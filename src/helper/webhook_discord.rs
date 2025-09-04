@@ -92,9 +92,10 @@ pub fn send_discord_embed(
     // Sanitize and set color if provided
     if let Some(c) = color_rgb
         .as_deref()
+        .filter(|s| *s != "0" && !s.is_empty())
         .and_then(parse_discord_color)
     {
-        embed["color"] = serde_json::json!(c);
+        embed["color"] = serde_json::json!(c as i64);
     }
 
     // Add the thumbnail if there is one

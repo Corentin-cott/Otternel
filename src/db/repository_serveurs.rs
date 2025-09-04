@@ -1,7 +1,7 @@
 use mysql::{params, prelude::Queryable};
-use crate::db::models::{Serveur, ServeurActif};
+use crate::db::models::{Serveur};
 
-use super::repository_players_users::Database;
+use super::repository_default::Database;
 
 impl Database {
     // ===========================
