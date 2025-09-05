@@ -2,7 +2,7 @@ use crate::playerstats::DockerFetcher;
 use serde_json::Value;
 use std::collections::HashMap;
 use colored::Colorize;
-use log::{debug, info, warn};
+use log::{debug, info, trace, warn};
 use crate::helper;
 
 /// Récupère les stats des joueurs Minecraft dans un monde donné
@@ -55,6 +55,8 @@ pub async fn sync_mc_stats_to_db() -> anyhow::Result<()> {
             }
         };
 
+        trace!("Stats Map : {:?}", stats_map);
+
         // Filter and get specific values from the stats. Fallback to 0 if none found
         for (uuid, json) in stats_map {
             // We add the player in case they're not in the database already
@@ -69,62 +71,22 @@ pub async fn sync_mc_stats_to_db() -> anyhow::Result<()> {
             }
 
             // Now the stats
-            let tmps_jeux = json.get("minecraft:custom")
-                .and_then(|v| v.get("minecraft:play_time"))
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0);
-
-            let nb_mort = json.get("minecraft:custom")
-                .and_then(|v| v.get("minecraft:deaths"))
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0) as i32;
-
-            let nb_kills = json.get("minecraft:custom")
-                .and_then(|v| v.get("minecraft:kill_entity"))
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0) as i32;
-
-            let nb_playerkill = json.get("minecraft:custom")
-                .and_then(|v| v.get("minecraft:player_kills"))
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0) as i32;
-
-            let mob_killed = json.get("minecraft:killed")
-                .cloned();
-
-            let nb_blocs_detr = json.get("minecraft:custom")
-                .and_then(|v| v.get("minecraft:mine_block"))
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0) as i32;
-
-            let nb_blocs_pose = json.get("minecraft:custom")
-                .and_then(|v| v.get("minecraft:place_block"))
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0) as i32;
-
-            let dist_total = json.get("minecraft:custom")
-                .and_then(|v| v.get("minecraft:walk_one_cm"))
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0) as i32;
-
-            let dist_pieds = json.get("minecraft:custom")
-                .and_then(|v| v.get("minecraft:walk_on_water_one_cm"))
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0) as i32;
-
-            let dist_elytres = json.get("minecraft:custom")
-                .and_then(|v| v.get("minecraft:fly_one_cm"))
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0) as i32;
-
-            let dist_vol = json.get("minecraft:custom")
-                .and_then(|v| v.get("minecraft:aviate_one_cm"))
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0) as i32;
-
-            let item_crafted = json.get("minecraft:crafted_items").cloned();
-            let item_broken = json.get("minecraft:broken_items").cloned();
-            let achievement = json.get("minecraft:achievements").cloned();
+            let (
+                tmps_jeux,
+                nb_mort,
+                nb_kills,
+                nb_playerkill,
+                nb_blocs_detr,
+                nb_blocs_pose,
+                dist_total,
+                dist_pieds,
+                dist_elytres,
+                dist_vol,
+                mob_killed,
+                item_crafted,
+                item_broken,
+                achievement
+            ) = extract_player_stats(&json);
 
             // Appel de la méthode pour insérer ou mettre à jour en base
             if let Err(e) = db.add_or_update_playerstats(
@@ -154,4 +116,120 @@ pub async fn sync_mc_stats_to_db() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn extract_player_stats(json: &Value) -> (
+    i64, i32, i32, i32, i32, i32, i32, i32, i32, i32,
+    Option<Value>, Option<Value>, Option<Value>, Option<Value>
+) {
+    let stats = json.get("stats").unwrap_or(&Value::Null);
+
+    let mob_killed = stats.get("minecraft:killed").cloned();
+    let item_crafted = stats.get("minecraft:crafted").cloned();
+    let item_broken = stats.get("minecraft:broken").cloned();
+    let achievement = stats.get("minecraft:achievements").cloned();
+
+    let tmps_jeux = [
+        "minecraft:play_one_minute",
+        "minecraft:play_time"
+    ].iter()
+        .map(|k| stats.get("minecraft:custom").unwrap_or(&Value::Null).get(*k).and_then(|v| v.as_i64()).unwrap_or(0))
+        .sum::<i64>() as i32;
+
+    let nb_mort = stats.get("minecraft:custom")
+        .and_then(|v| v.get("minecraft:deaths"))
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0) as i32;
+
+    let nb_kills = stats.get("minecraft:custom")
+        .and_then(|v| v.get("minecraft:mob_kills"))
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0) as i32;
+
+    let nb_playerkill = stats.get("minecraft:custom")
+        .and_then(|v| v.get("minecraft:player_kills"))
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0) as i32;
+
+    let nb_blocs_detr = stats.get("minecraft:mined")
+        .map(|custom| sum_stats_by_prefix(custom, "minecraft:"))
+        .unwrap_or(0);
+
+    let nb_blocs_pose = stats.get("minecraft:used")
+        .map(|custom| sum_stats_by_prefix(custom, "minecraft:"))
+        .unwrap_or(0);
+
+    let dist_total = [
+        "minecraft:climb_one_cm",
+        "minecraft:crouch_one_cm",
+        "minecraft:fall_one_cm",
+        "minecraft:fly_one_cm",
+        "minecraft:sprint_one_cm",
+        "minecraft:swim_one_cm",
+        "minecraft:walk_one_cm",
+        "minecraft:walk_on_water_one_cm",
+        "minecraft:walk_under_water_one_cm",
+        "minecraft:boat_one_cm",
+        "minecraft:aviate_one_cm",
+        "minecraft:happy_ghast_one_cm",
+        "minecraft:horse_one_cm",
+        "minecraft:minecart_one_cm",
+        "minecraft:pig_one_cm",
+        "minecraft:strider_one_cm"
+    ].iter()
+        .map(|k| stats.get("minecraft:custom").unwrap_or(&Value::Null).get(*k).and_then(|v| v.as_i64()).unwrap_or(0))
+        .sum::<i64>() as i32;
+
+    let dist_pieds = [
+        "minecraft:crouch_one_cm",
+        "minecraft:sprint_one_cm",
+        "minecraft:walk_one_cm",
+        "minecraft:walk_on_water_one_cm",
+        "minecraft:walk_under_water_one_cm"
+    ].iter()
+        .map(|k| stats.get("minecraft:custom").unwrap_or(&Value::Null).get(*k).and_then(|v| v.as_i64()).unwrap_or(0))
+        .sum::<i64>() as i32;
+
+    let dist_elytres = stats.get("minecraft:custom")
+        .and_then(|v| v.get("minecraft:aviate_one_cm"))
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0) as i32;
+
+    let dist_vol = stats.get("minecraft:custom")
+        .and_then(|v| v.get("minecraft:fly_one_cm"))
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0) as i32;
+
+    (
+        tmps_jeux as i64,
+        nb_mort,
+        nb_kills,
+        nb_playerkill,
+        nb_blocs_detr,
+        nb_blocs_pose,
+        dist_total,
+        dist_pieds,
+        dist_elytres,
+        dist_vol,
+        mob_killed,
+        item_crafted,
+        item_broken,
+        achievement
+    )
+}
+
+fn sum_stats_by_prefix(stats_obj: &Value, prefix: &str) -> i32 {
+    if let Some(map) = stats_obj.as_object() {
+        map.iter()
+            .filter(|(k, _)| k.starts_with(prefix))
+            .map(|(_, v)| {
+                match v {
+                    Value::Number(num) => num.as_i64().unwrap_or(0),
+                    _ => 0
+                }
+            })
+            .sum::<i64>() as i32
+    } else {
+        0
+    }
 }
