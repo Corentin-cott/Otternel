@@ -52,6 +52,23 @@ fn main() {
 #[tokio::main]
 async fn periodic_playerstats_fetch() {
     info!("{} {} {}", "Starting periodic playerstats fetch for".blue().bold(), "Minecraft".green().bold(), "players :".blue().bold());
+
+    if let Err(e) = helper::webhook_discord::send_discord_embed(
+        "otternel",
+        "",
+        "Enregistrement des stats de joueurs Minecraft",
+        "",
+        "Passage sur chaque serveurs de la table `serveurs`.",
+        "126020".to_string().into(),
+        "",
+        "",
+        "",
+        "Otternel Service",
+        Some(chrono::Utc::now().to_rfc3339())
+    ) {
+        error!("{e}");
+    }
+
     if let Err(e) = playerstats::minecraft_players::sync_mc_stats_to_db().await {
         error!("Erreur sync_mc_stats_to_db: {e:?}");
     }

@@ -1,8 +1,9 @@
 use crate::playerstats::DockerFetcher;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::fmt::format;
 use colored::Colorize;
-use log::{debug, info, trace, warn};
+use log::{debug, error, info, trace, warn};
 use crate::helper;
 
 /// Récupère les stats des joueurs Minecraft dans un monde donné
@@ -57,6 +58,9 @@ pub async fn sync_mc_stats_to_db() -> anyhow::Result<()> {
 
         trace!("Stats Map : {:?}", stats_map);
 
+        let mut saved_count = 0; // Count number of playerstats saved
+        let total_players = stats_map.len();
+
         // Filter and get specific values from the stats. Fallback to 0 if none found
         for (uuid, json) in stats_map {
             // We add the player in case they're not in the database already
@@ -88,8 +92,7 @@ pub async fn sync_mc_stats_to_db() -> anyhow::Result<()> {
                 achievement
             ) = extract_player_stats(&json);
 
-            // Appel de la méthode pour insérer ou mettre à jour en base
-            if let Err(e) = db.add_or_update_playerstats(
+            if db.add_or_update_playerstats(
                 server.id.clone(),
                 &uuid,
                 tmps_jeux,
@@ -106,12 +109,37 @@ pub async fn sync_mc_stats_to_db() -> anyhow::Result<()> {
                 item_crafted,
                 item_broken,
                 achievement,
-            ) {
-                warn!("Failed to add/update player stats for uuid {}: {}", uuid.yellow().bold(), e);
-                continue;
-            } else {
+            ).is_ok() {
+                saved_count += 1; // Increment if save is successful
                 info!("Minecraft playerstats added for player : {}", uuid.green().bold());
+            } else {
+                warn!("Failed to add/update player stats for uuid {}.", uuid.yellow().bold());
             }
+        }
+
+        // Send validation webhook
+        let embed_color = if saved_count == 0 && total_players == 0 {
+            "90c480".to_string() // Light green
+        } else if saved_count == total_players {
+            "126020".to_string() // Green
+        } else {
+            "601010".to_string() // Red
+        };
+
+        if let Err(e) = helper::webhook_discord::send_discord_embed(
+            "otternel",
+            "",
+            &format!("Playerstats fetch for {}", server.nom),
+            "",
+            &format!("Enregistrement de {} joueurs sur {}.", saved_count, total_players),
+            embed_color.into(),
+            &*server.image.unwrap(),
+            "",
+            "",
+            &format!("{}", server.nom),
+            Some(chrono::Utc::now().to_rfc3339())
+        ) {
+            error!("{e}");
         }
     }
 
