@@ -4,6 +4,7 @@ mod serverlog;
 mod helper;
 mod playerstats;
 
+use colored::Colorize;
 use log::{info, error, trace};
 
 /**
@@ -50,17 +51,8 @@ fn main() {
 
 #[tokio::main]
 async fn periodic_playerstats_fetch() {
-    let container = "creatif";  // Nom du conteneur temp
-    let world = "netherhub";    // Nom du monde temp
-
-    match playerstats::minecraft_players::fetch_mc_player_stats(container, world).await {
-        Ok(stats) => {
-            for (uuid, json) in stats {
-                trace!("Joueur {} : {:?}", uuid, json);
-            }
-        }
-        Err(e) => {
-            error!("Erreur lors de la récupération des stats : {}", e);
-        }
+    info!("{} {} {}", "Starting periodic playerstats fetch for".blue().bold(), "Minecraft".green().bold(), "players :".blue().bold());
+    if let Err(e) = playerstats::minecraft_players::sync_mc_stats_to_db().await {
+        error!("Erreur sync_mc_stats_to_db: {e:?}");
     }
 }

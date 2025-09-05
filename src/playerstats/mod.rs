@@ -3,6 +3,8 @@ use bollard::container::DownloadFromContainerOptions;
 use futures_util::stream::TryStreamExt;
 use std::collections::HashMap;
 use std::io::Cursor;
+use bollard::query_parameters::InspectContainerOptions;
+use log::warn;
 use tar::Archive;
 use serde_json::Value;
 
@@ -33,7 +35,15 @@ impl DockerFetcher {
             path: remote_path.to_string(),
         };
 
+
+        if self.docker.inspect_container(container_name, None::<InspectContainerOptions>).await.is_err() {
+            // Container not found, moving on
+            warn!("Failed to download files from '{}' container", container_name);
+            return Ok(HashMap::new());
+        }
+
         let mut stream = self.docker.download_from_container(container_name, Some(options));
+
         let mut tar_bytes = Vec::new();
 
         while let Some(chunk) = stream.try_next().await? {
