@@ -6,15 +6,29 @@ serverlog_ids = [1] # Server ids concerned by the trigger (Not set = All and any
 function = "on_test" # Function called in the action crate
 
 [[trigger]]
-name = "player_joined"
+name = "minecraft_player_joined"
 game = "minecraft"
 pattern = ".* .* .* joined the game"
 serverlog_ids = [1, 2]
 function = "on_player_joined"
 
 [[trigger]]
-name = "player_left"
+name = "minecraft_player_left"
 game = "minecraft"
 pattern = ".* .* .* left the game"
 serverlog_ids = [1, 2]
 function = "on_player_left"
+
+[[trigger]]
+name = "minecraft_player_advancement"
+game = "minecraft"
+pattern = ".* .* .* has made the advancement .*"
+serverlog_ids = [1, 2]
+function = "on_minecraft_player_advancement"
+
+[[trigger]]
+name = "minecraft_player_message"
+game = "minecraft"
+pattern = "^\\[.*\\]: <.*> .*"
+serverlog_ids = [1, 2]
+function = "on_player_message"

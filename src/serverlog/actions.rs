@@ -29,6 +29,7 @@ pub fn dispatch(function: &str, line: &str, serverlog_id: u32) {
         "on_player_message" => on_player_message(line, serverlog_id),
         "on_player_joined" => on_player_connection_update(line, serverlog_id, "rejoint"),
         "on_player_left" => on_player_connection_update(line, serverlog_id, "quitté"),
+        "on_minecraft_player_advancement" => on_minecraft_player_advancement(line, serverlog_id),
         _ => warn!("Unknown action function: {}", function.yellow()),
     }
 }
@@ -86,15 +87,15 @@ fn on_player_connection_update(line: &str, serverlog_id: u32, co_type: &str) {
     // Send Discord embed with the player's name
     if let Err(e) = helper::webhook_discord::send_discord_embed(
         "otternel",
-        "",
+        " ",
         playername,
         &format!("https://antredesloutres.fr/joueurs/minecraft/{}", playername.to_lowercase()),
         &format!("{playername} a {co_type} {}", server.nom),
         server.embed_color,
-        "",
-        "",
-        "",
-        &format!("{}", server.nom),
+        " ",
+        " ",
+        " ",
+        &format!("Message de {}", server.nom),
         Some(chrono::Utc::now()
             .to_rfc3339())
     ) {
@@ -106,27 +107,63 @@ fn on_player_message(line: &str, serverlog_id: u32) {
     // Resolve active server at serverlog_id
     let server:Serveur = get_server_by_active_server_id(serverlog_id);
 
-    // TODO : Extrat player name from player message in line, then send it in embed
+    let re = regex::Regex::new(r"<([^>]+)>\s(.+)").unwrap();
+    let caps = re.captures(line).unwrap();
 
-    // Temporary placeholder values
-    let playername = "un joueur";
-    let message = line;
+    let playername = caps.get(1).unwrap().as_str();
+    let message = caps.get(2).unwrap().as_str();
 
     // Send Discord embed with the player's message
     if let Err(e) = helper::webhook_discord::send_discord_embed(
         "otternel",
-        message,
+        " ",
         playername,
         &format!("https://antredesloutres.fr/joueurs/minecraft/{}", playername.to_lowercase()),
-        &format!("on_player_message (log {})", serverlog_id),
+        message,
         server.embed_color,
-        &format!("https://mc-heads.net/avatar/{}", playername.to_lowercase()),
-        "",
-        "",
+        &format!("https://mc-heads.net/avatar/{}/50", playername.to_lowercase()),
+        " ",
+        " ",
         &format!("Message de {}", server.nom),
-        None
+        Some(chrono::Utc::now()
+            .to_rfc3339())
     ) {
         error!("{e}");
+    }
+}
+
+fn on_minecraft_player_advancement(line: &str, serverlog_id: u32) {
+    // Resolve active server at serverlog_id
+    let server:Serveur = get_server_by_active_server_id(serverlog_id);
+
+    let re = regex::Regex::new(
+        r"^(?:\[[^\]]+\]\s*:?\s*)*([^ ]+)\s+(?:has made the advancement|completed the challenge|reached the goal)\s+\[?(.+?)\]$"
+    ).unwrap();
+
+    if let Some(caps) = re.captures(line) {
+        let playername = caps.get(1).map(|m| m.as_str()).unwrap_or("Joueur");
+        let advancement = caps.get(2).map(|m| m.as_str()).unwrap_or("");
+
+        // Send Discord embed with the player's message
+        if let Err(e) = helper::webhook_discord::send_discord_embed(
+            "otternel",
+            " ",
+            playername,
+            &format!("https://antredesloutres.fr/joueurs/minecraft/{}", playername.to_lowercase()),
+            &format!("{} a obtenu l'avancement {} sur {} !", playername, advancement, server.nom),
+            server.embed_color,
+            " ",
+            " ",
+            " ",
+            &format!("Message de {}", server.nom),
+            Some(chrono::Utc::now()
+                .to_rfc3339())
+        ) {
+            error!("{e}");
+        }
+    } else {
+        // Avoid panic
+        debug!("no advancement match: {}", line);
     }
 }
 
