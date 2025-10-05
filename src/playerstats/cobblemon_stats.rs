@@ -14,6 +14,9 @@ struct Pokemon {
     gender: Option<String>,
     nickname: Option<String>,
     level: Option<i32>,
+    shiny: Option<bool>,
+    do_uuid: Option<String>,
+    pokemon_uuid: Option<String>,
 }
 
 pub async fn fetch_cobblemon_stats(
@@ -49,12 +52,14 @@ pub async fn fetch_cobblemon_stats(
     let mut total_joueurs = 0usize;
 
     for (file_key, bytes) in dat_files {
-        let uuid = file_key; // Filename = UUID
+        let uuid = file_key; // Filename = joueur UUID
+
+        // Décompression GZIP si nécessaire
         let decompressed_bytes = if bytes.len() >= 2 && bytes[0] == 0x1f && bytes[1] == 0x8b {
             let mut gz = GzDecoder::new(&bytes[..]);
             let mut decomp = Vec::new();
             if let Err(e) = gz.read_to_end(&mut decomp) {
-                warn!("Decompessing error {}: {:?}", uuid, e);
+                warn!("Decompression error {}: {:?}", uuid, e);
                 continue;
             }
             decomp
@@ -90,6 +95,47 @@ pub async fn fetch_cobblemon_stats(
                                 Some(NbtValue::Int(n)) => Some(*n),
                                 _ => None,
                             };
+                            let shiny = match poke.get("Shiny") {
+                                Some(NbtValue::Byte(b)) => Some(*b != 0),
+                                Some(NbtValue::Int(i)) => Some(*i != 0),
+                                _ => None,
+                            };
+                            let pokemon_uuid = match poke.get("PokemonUUID").or_else(|| poke.get("UUID")) {
+                                Some(NbtValue::String(s)) => Some(s.clone()),
+                                Some(NbtValue::IntArray(arr)) => {
+                                    if arr.len() == 4 {
+                                        Some(format!(
+                                            "{:08x}-{:04x}-{:04x}-{:04x}-{:012x}",
+                                            arr[0],
+                                            (arr[1] >> 16) & 0xFFFF,
+                                            arr[1] & 0xFFFF,
+                                            (arr[2] >> 16) & 0xFFFF,
+                                            (((arr[2] & 0xFFFF) as u64) << 32) | ((arr[3] as u32) as u64)
+                                        ))
+                                    } else {
+                                        None
+                                    }
+                                }
+                                _ => None,
+                            };
+                            let do_uuid = match poke.get("PokemonOriginalTrainer") {
+                                Some(NbtValue::String(s)) => Some(s.clone()),
+                                Some(NbtValue::IntArray(arr)) => {
+                                    if arr.len() == 4 {
+                                        Some(format!(
+                                            "{:08x}-{:04x}-{:04x}-{:04x}-{:012x}",
+                                            arr[0],
+                                            (arr[1] >> 16) & 0xFFFF,
+                                            arr[1] & 0xFFFF,
+                                            (arr[2] >> 16) & 0xFFFF,
+                                            (((arr[2] & 0xFFFF) as u64) << 32) | ((arr[3] as u32) as u64)
+                                        ))
+                                    } else {
+                                        None
+                                    }
+                                }
+                                _ => None,
+                            };
 
                             team.push(Pokemon {
                                 species,
@@ -97,16 +143,19 @@ pub async fn fetch_cobblemon_stats(
                                 gender,
                                 nickname,
                                 level,
+                                shiny,
+                                do_uuid,
+                                pokemon_uuid,
                             });
                         } else {
-                            break; // No other slot
+                            break;
                         }
                     }
 
                     total_pokemon += team.len();
                     total_joueurs += 1;
 
-                    let mut pkmn_data = [(None, None, None, None, None); 6];
+                    let mut pkmn_data = [(None, None, None, None, None, None, None, None); 6];
 
                     for (i, poke) in team.iter().enumerate().take(6) {
                         pkmn_data[i] = (
@@ -115,6 +164,9 @@ pub async fn fetch_cobblemon_stats(
                             poke.gender.as_deref(),
                             poke.nickname.as_deref(),
                             poke.level,
+                            poke.shiny,
+                            poke.do_uuid.as_deref(),
+                            poke.pokemon_uuid.as_deref(),
                         );
                     }
 
