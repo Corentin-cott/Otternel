@@ -30,15 +30,12 @@ fn main() {
             info!("Config loaded successfully");
 
             // Load the periodic tasks
-            periodic_playerstats_fetch()
-
-            /* Disable the watcher for now
+            // periodic_playerstats_fetch()
 
             // Start the watcher — the function is blocking and runs indefinitely
             if let Err(err) = serverlog::log_watcher::watch_serverlogs(&cfg.serverlog_folder) {
                 error!("Log watcher failed: {}", err);
             }
-            */
         }
         Err(err) => {
             // Initialize a minimal logger to be able to log the error

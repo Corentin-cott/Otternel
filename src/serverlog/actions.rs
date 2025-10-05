@@ -30,6 +30,7 @@ pub fn dispatch(function: &str, line: &str, serverlog_id: u32) {
         "on_player_joined" => on_player_connection_update(line, serverlog_id, "rejoint"),
         "on_player_left" => on_player_connection_update(line, serverlog_id, "quitté"),
         "on_minecraft_player_advancement" => on_minecraft_player_advancement(line, serverlog_id),
+        "on_player_death" => on_player_death(line, serverlog_id),
         _ => warn!("Unknown action function: {}", function.yellow()),
     }
 }
@@ -164,6 +165,39 @@ fn on_minecraft_player_advancement(line: &str, serverlog_id: u32) {
     } else {
         // Avoid panic
         debug!("no advancement match: {}", line);
+    }
+}
+
+fn on_player_death(line: &str, serverlog_id: u32) {
+    // Resolve active server from serverlog_id
+    let server: Serveur = get_server_by_active_server_id(serverlog_id);
+
+    // Exemple de ligne : "[17:58:38] [Server thread/INFO]: TheAzertor fell from a high place"
+    let re = regex::Regex::new(r": ([^ ]+) (.+)$").unwrap();
+    let (playername, death_message) = if let Some(caps) = re.captures(line) {
+        (
+            caps.get(1).map(|m| m.as_str()).unwrap_or("Joueur"),
+            caps.get(2).map(|m| m.as_str()).unwrap_or("est mort."),
+        )
+    } else {
+        ("Joueur", "est mort.")
+    };
+
+    // Envoi de l'embed Discord
+    if let Err(e) = helper::webhook_discord::send_discord_embed(
+        "otternel",
+        " ",
+        &format!("{playername} est mort sur {} !", server.nom),
+        &format!("https://antredesloutres.fr/joueurs/minecraft/{}", playername.to_lowercase()),
+        &format!("{playername} {death_message}"),
+        server.embed_color,
+        " ",
+        " ",
+        " ",
+        &format!("Message de {}", server.nom),
+        Some(chrono::Utc::now().to_rfc3339()),
+    ) {
+        error!("{e}");
     }
 }
 
