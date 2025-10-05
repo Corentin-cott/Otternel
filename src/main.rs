@@ -3,6 +3,7 @@ mod db;
 mod serverlog;
 mod helper;
 mod playerstats;
+use futures::future;
 
 use colored::Colorize;
 use log::{info, error};
@@ -53,11 +54,8 @@ async fn main() {
         .to_lowercase() == "true";
 
     if !get_player_stats_enabled {
-        info!("{}", "GET_PLAYER_STATS_ENABLED is false — periodic events will not start".yellow());
-        // Keep the watcher alive forever
-        loop {
-            tokio::time::sleep(Duration::from_secs(3600)).await;
-        }
+        info!("{}", "GET_PLAYER_STATS_ENABLED is false : periodic events will not start".yellow());
+        future::pending::<()>().await; // Even if player stats is disabled, keep the program running
     }
 
     // Read the interval from environment
@@ -81,13 +79,7 @@ async fn main() {
 async fn periodic_playerstats_fetch() {
     use helper::webhook_discord::send_discord_embed;
 
-    info!(
-        "{} {} {}",
-        "Starting periodic playerstats fetch for".blue().bold(),
-        "Minecraft".green().bold(),
-        "players :".blue().bold()
-    );
-
+    // Send embed
     if let Err(e) = send_discord_embed(
         "otternel",
         "",
@@ -104,6 +96,7 @@ async fn periodic_playerstats_fetch() {
         error!("{e}");
     }
 
+    // Launch minecraft player stats
     if let Err(e) = playerstats::minecraft_players::sync_mc_stats_to_db().await {
         error!("Erreur sync_mc_stats_to_db: {e:?}");
     }

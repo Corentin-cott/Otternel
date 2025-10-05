@@ -42,6 +42,12 @@ pub async fn sync_mc_stats_to_db() -> anyhow::Result<()> {
         return Ok(());
     }
 
+    info!(
+        "{} {} {}",
+        "Starting periodic playerstats fetch for".blue().bold(),
+        "Minecraft".green().bold(),
+        "players :".blue().bold()
+    );
     for server in minecraft_servers {
         info!("{} {}","Stating playerstats fetch for the server :".to_string().blue(), server.nom.green().bold() );
 
