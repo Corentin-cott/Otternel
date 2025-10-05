@@ -9,6 +9,7 @@ use tar::Archive;
 use serde_json::Value;
 
 pub mod minecraft_players;
+mod cobblemon_stats;
 
 pub struct DockerFetcher {
     docker: Docker,
@@ -34,7 +35,6 @@ impl DockerFetcher {
         let options = DownloadFromContainerOptions {
             path: remote_path.to_string(),
         };
-
 
         if self.docker.inspect_container(container_name, None::<InspectContainerOptions>).await.is_err() {
             // Container not found, moving on
@@ -80,4 +80,52 @@ impl DockerFetcher {
 
         Ok(result)
     }
+
+    /// Récupère tous les fichiers avec l'extension donnée sous `remote_path` dans le container.
+    /// Retourne une map { "<filename sans extension>" => bytes }.
+    pub async fn fetch_files_by_extension(
+        &self,
+        container_name: &str,
+        remote_path: &str,
+        ext: &str,
+    ) -> anyhow::Result<std::collections::HashMap<String, Vec<u8>>> {
+        let options = DownloadFromContainerOptions {
+            path: remote_path.to_string(),
+        };
+
+        if self.docker.inspect_container(container_name, None::<InspectContainerOptions>).await.is_err() {
+            warn!("Failed to download files from '{}' container", container_name);
+            return Ok(std::collections::HashMap::new());
+        }
+
+        let mut stream = self.docker.download_from_container(container_name, Some(options));
+        let mut tar_bytes = Vec::new();
+
+        while let Some(chunk) = stream.try_next().await? {
+            tar_bytes.extend(chunk);
+        }
+
+        let cursor = Cursor::new(tar_bytes);
+        let mut archive = Archive::new(cursor);
+        let mut result = std::collections::HashMap::new();
+
+        for entry in archive.entries()? {
+            let mut file = entry?;
+            let path_str = file.path()?.to_string_lossy().into_owned();
+
+            if path_str.ends_with(&format!(".{}", ext)) {
+                let mut contents = Vec::new();
+                use std::io::Read;
+                file.read_to_end(&mut contents)?;
+
+                if let Some(fname) = path_str.split('/').last() {
+                    let key = fname.replace(&format!(".{}", ext), "");
+                    result.insert(key, contents);
+                }
+            }
+        }
+
+        Ok(result)
+    }
+
 }

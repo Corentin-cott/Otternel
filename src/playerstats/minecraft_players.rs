@@ -1,4 +1,5 @@
-use crate::playerstats::DockerFetcher;
+use crate::playerstats::cobblemon_stats::fetch_cobblemon_stats;
+use crate::playerstats::{cobblemon_stats, DockerFetcher};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fmt::format;
@@ -55,6 +56,23 @@ pub async fn sync_mc_stats_to_db() -> anyhow::Result<()> {
                 continue;
             }
         };
+
+        let mut total_cobblemon_pokemon = 0;
+        let mut total_cobblemon_trainer = 0;
+
+        match cobblemon_stats::fetch_cobblemon_stats(server.id, container, world_name).await {
+            Ok((pokemon, trainers)) => {
+                total_cobblemon_pokemon = pokemon;
+                total_cobblemon_trainer = trainers;
+            }
+            Err(e) => {
+                debug!(
+            "Failed to fetch cobblemon stats for server {}: {}",
+            server.nom.yellow().bold(),
+            e.to_string().yellow().bold()
+        );
+            }
+        }
 
         trace!("Stats Map : {:?}", stats_map);
 
@@ -126,12 +144,22 @@ pub async fn sync_mc_stats_to_db() -> anyhow::Result<()> {
             "601010".to_string() // Red
         };
 
+        // Supertext
+        let mut embed_supertext: String = format!("Enregistrement de {} joueurs sur {}", saved_count, total_players);
+
+        if total_cobblemon_pokemon > 0 && total_cobblemon_trainer > 0 {
+            embed_supertext.push_str(&format!(
+                "\nEnregistrement de {} pokemon pour {} dresseur.",
+                total_cobblemon_pokemon, total_cobblemon_trainer
+            ));
+        }
+
         if let Err(e) = helper::webhook_discord::send_discord_embed(
             "otternel",
             "",
             &format!("Playerstats fetch for {}", server.nom),
             "",
-            &format!("Enregistrement de {} joueurs sur {}.", saved_count, total_players),
+            &embed_supertext,
             embed_color.into(),
             &*server.image.unwrap(),
             "",

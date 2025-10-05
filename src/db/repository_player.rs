@@ -256,4 +256,90 @@ impl Database {
         Ok(())
     }
 
+    pub fn insert_joueur_pokemon(
+        &self,
+        serveur_id: u64,
+        joueur_uuid: &str,
+        pkmn_data: &[(
+            Option<&str>, // pkmn
+            Option<&str>, // form
+            Option<&str>, // gender
+            Option<&str>, // nickname
+            Option<i32>,  // level
+        ); 6],
+    ) -> Result<(), mysql::Error> {
+        let mut conn = self.get_conn()?;
+
+        conn.exec_drop(
+            r#"
+        INSERT INTO joueurs_pokemon (
+            serveur_id, joueur_uuid,
+            pkmn1, pkmn1_form, pkmn1_gender, pkmn1_nickname, pkmn1_level,
+            pkmn2, pkmn2_form, pkmn2_gender, pkmn2_nickname, pkmn2_level,
+            pkmn3, pkmn3_form, pkmn3_gender, pkmn3_nickname, pkmn3_level,
+            pkmn4, pkmn4_form, pkmn4_gender, pkmn4_nickname, pkmn4_level,
+            pkmn5, pkmn5_form, pkmn5_gender, pkmn5_nickname, pkmn5_level,
+            pkmn6, pkmn6_form, pkmn6_gender, pkmn6_nickname, pkmn6_level
+        ) VALUES (
+            :serveur_id, :joueur_uuid,
+            :pkmn1, :pkmn1_form, :pkmn1_gender, :pkmn1_nickname, :pkmn1_level,
+            :pkmn2, :pkmn2_form, :pkmn2_gender, :pkmn2_nickname, :pkmn2_level,
+            :pkmn3, :pkmn3_form, :pkmn3_gender, :pkmn3_nickname, :pkmn3_level,
+            :pkmn4, :pkmn4_form, :pkmn4_gender, :pkmn4_nickname, :pkmn4_level,
+            :pkmn5, :pkmn5_form, :pkmn5_gender, :pkmn5_nickname, :pkmn5_level,
+            :pkmn6, :pkmn6_form, :pkmn6_gender, :pkmn6_nickname, :pkmn6_level
+        )
+        ON DUPLICATE KEY UPDATE
+            pkmn1 = VALUES(pkmn1), pkmn1_form = VALUES(pkmn1_form), pkmn1_gender = VALUES(pkmn1_gender),
+            pkmn1_nickname = VALUES(pkmn1_nickname), pkmn1_level = VALUES(pkmn1_level),
+            pkmn2 = VALUES(pkmn2), pkmn2_form = VALUES(pkmn2_form), pkmn2_gender = VALUES(pkmn2_gender),
+            pkmn2_nickname = VALUES(pkmn2_nickname), pkmn2_level = VALUES(pkmn2_level),
+            pkmn3 = VALUES(pkmn3), pkmn3_form = VALUES(pkmn3_form), pkmn3_gender = VALUES(pkmn3_gender),
+            pkmn3_nickname = VALUES(pkmn3_nickname), pkmn3_level = VALUES(pkmn3_level),
+            pkmn4 = VALUES(pkmn4), pkmn4_form = VALUES(pkmn4_form), pkmn4_gender = VALUES(pkmn4_gender),
+            pkmn4_nickname = VALUES(pkmn4_nickname), pkmn4_level = VALUES(pkmn4_level),
+            pkmn5 = VALUES(pkmn5), pkmn5_form = VALUES(pkmn5_form), pkmn5_gender = VALUES(pkmn5_gender),
+            pkmn5_nickname = VALUES(pkmn5_nickname), pkmn5_level = VALUES(pkmn5_level),
+            pkmn6 = VALUES(pkmn6), pkmn6_form = VALUES(pkmn6_form), pkmn6_gender = VALUES(pkmn6_gender),
+            pkmn6_nickname = VALUES(pkmn6_nickname), pkmn6_level = VALUES(pkmn6_level)
+        "#,
+            params! {
+            "serveur_id" => serveur_id,
+            "joueur_uuid" => joueur_uuid,
+            "pkmn1" => pkmn_data[0].0,
+            "pkmn1_form" => pkmn_data[0].1,
+            "pkmn1_gender" => pkmn_data[0].2,
+            "pkmn1_nickname" => pkmn_data[0].3,
+            "pkmn1_level" => pkmn_data[0].4,
+            "pkmn2" => pkmn_data[1].0,
+            "pkmn2_form" => pkmn_data[1].1,
+            "pkmn2_gender" => pkmn_data[1].2,
+            "pkmn2_nickname" => pkmn_data[1].3,
+            "pkmn2_level" => pkmn_data[1].4,
+            "pkmn3" => pkmn_data[2].0,
+            "pkmn3_form" => pkmn_data[2].1,
+            "pkmn3_gender" => pkmn_data[2].2,
+            "pkmn3_nickname" => pkmn_data[2].3,
+            "pkmn3_level" => pkmn_data[2].4,
+            "pkmn4" => pkmn_data[3].0,
+            "pkmn4_form" => pkmn_data[3].1,
+            "pkmn4_gender" => pkmn_data[3].2,
+            "pkmn4_nickname" => pkmn_data[3].3,
+            "pkmn4_level" => pkmn_data[3].4,
+            "pkmn5" => pkmn_data[4].0,
+            "pkmn5_form" => pkmn_data[4].1,
+            "pkmn5_gender" => pkmn_data[4].2,
+            "pkmn5_nickname" => pkmn_data[4].3,
+            "pkmn5_level" => pkmn_data[4].4,
+            "pkmn6" => pkmn_data[5].0,
+            "pkmn6_form" => pkmn_data[5].1,
+            "pkmn6_gender" => pkmn_data[5].2,
+            "pkmn6_nickname" => pkmn_data[5].3,
+            "pkmn6_level" => pkmn_data[5].4,
+        },
+        )?;
+
+        Ok(())
+    }
+
 }
