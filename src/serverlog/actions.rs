@@ -87,7 +87,7 @@ fn on_player_connection_update(line: &str, serverlog_id: u32, co_type: &str) {
 
     // Send Discord embed with the player's name
     if let Err(e) = helper::webhook_discord::send_discord_embed(
-        "otternel",
+        helper::webhook_discord::get_webhook_identity_by_server_id(server.jeu),
         " ",
         playername,
         &format!("https://antredesloutres.fr/joueurs/minecraft/{}", playername.to_lowercase()),
@@ -116,7 +116,7 @@ fn on_player_message(line: &str, serverlog_id: u32) {
 
     // Send Discord embed with the player's message
     if let Err(e) = helper::webhook_discord::send_discord_embed(
-        "otternel",
+        helper::webhook_discord::get_webhook_identity_by_server_id(server.jeu),
         " ",
         playername,
         &format!("https://antredesloutres.fr/joueurs/minecraft/{}", playername.to_lowercase()),
@@ -147,7 +147,7 @@ fn on_minecraft_player_advancement(line: &str, serverlog_id: u32) {
 
         // Send Discord embed with the player's message
         if let Err(e) = helper::webhook_discord::send_discord_embed(
-            "otternel",
+        helper::webhook_discord::get_webhook_identity_by_server_id(server.jeu),
             " ",
             playername,
             &format!("https://antredesloutres.fr/joueurs/minecraft/{}", playername.to_lowercase()),
@@ -185,7 +185,7 @@ fn on_player_death(line: &str, serverlog_id: u32) {
 
     // Envoi de l'embed Discord
     if let Err(e) = helper::webhook_discord::send_discord_embed(
-        "otternel",
+        helper::webhook_discord::get_webhook_identity_by_server_id(server.jeu),
         " ",
         &format!("{playername} est mort sur {} !", server.nom),
         &format!("https://antredesloutres.fr/joueurs/minecraft/{}", playername.to_lowercase()),

@@ -178,3 +178,11 @@ fn parse_discord_color(s: &str) -> Option<u32> {
 
     u32::from_str_radix(t, 16).ok()
 }
+
+pub fn get_webhook_identity_by_server_id(game: String) -> &'static str {
+    match game.to_lowercase().as_str() {
+        "minecraft" => "mineotter",
+        "palworld" => "multiloutre",
+        _ => "otternel",
+    }
+}
