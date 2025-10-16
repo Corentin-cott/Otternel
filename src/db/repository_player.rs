@@ -2,12 +2,42 @@ use colored::Colorize;
 use log::debug;
 use mysql::{params, prelude::Queryable};
 use serde::Deserialize;
-use serde_json::Value;
 use crate::db::models::{JoueurConnectionLog};
 
 use super::repository_default::Database;
 
 impl Database {
+
+    // ===========================
+    // joueurs
+    // ===========================
+
+    /// Vérifie si un compte joueur est déjà lié à un utilisateur.
+    ///
+    /// La liaison est déterminée par la présence d'une valeur non-NULL
+    /// dans la colonne `utilisateur_id` de la table `joueurs`.
+    ///
+    /// # Arguments
+    ///
+    /// * `joueur_id` - L'ID du joueur à vérifier.
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(true)` si le champ `utilisateur_id` n'est pas NULL.
+    /// - `Ok(false)` si le champ `utilisateur_id` est NULL ou si le joueur n'existe pas.
+    /// - `Err(mysql::Error)` en cas d'erreur de communication avec la base de données.
+    pub fn is_account_linked_to_user(&self, joueur_id: u64) -> Result<bool, mysql::Error> {
+        let mut conn = self.get_conn()?;
+
+        let count: Option<u64> = conn.exec_first(
+            "SELECT COUNT(utilisateur_id) FROM joueurs WHERE id = :id",
+            params! { "id" => joueur_id },
+        )?;
+
+        // Si le joueur n'existe pas, `count` sera `None`. `unwrap_or(0)` transforme `None` en 0
+        Ok(count.unwrap_or(0) > 0)
+    }
+
     // ===========================
     // joueurs_connections_log
     // ===========================

@@ -1,8 +1,6 @@
-use crate::playerstats::cobblemon_stats::fetch_cobblemon_stats;
 use crate::playerstats::{cobblemon_stats, DockerFetcher};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::fmt::format;
 use colored::Colorize;
 use log::{debug, error, info, trace, warn};
 use crate::helper;

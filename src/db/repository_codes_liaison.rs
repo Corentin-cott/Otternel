@@ -1,7 +1,4 @@
-use mysql::{params, prelude::Queryable, Row};
-use chrono::NaiveDateTime;
-
-use crate::db::models::{CodeLiaison, Serveur};
+use mysql::{params, prelude::Queryable};
 
 use super::repository_default::Database;
 
@@ -30,7 +27,7 @@ impl Database {
         let mut conn = self.get_conn()?;
         
         conn.exec_drop(
-            r#"INSERT INTO codes_liaison_compte (joueur_id, code_liaison, cree_le, expire_le)
+            r#"INSERT INTO codes_liaison (joueur_id, code_liaison, cree_le, expire_le)
                VALUES (:joueur_id, :code, NOW(), NOW() + INTERVAL :duree MINUTE)"#,
             params! {
                 "joueur_id" => joueur_id,
