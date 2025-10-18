@@ -1,5 +1,6 @@
 use mysql::{params, prelude::Queryable};
 use crate::db::models::{Serveur};
+use crate::db::models::{RconParams};
 
 use super::repository_default::Database;
 
@@ -105,6 +106,36 @@ impl Database {
         )?;
 
         Ok(result.into_iter().next())
+    }
+
+    /// Fetches RCON parameters for an active server by its ID.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The primary key (`id`) of the record in the `serveurs_actifs` table.
+    ///
+    /// # Returns
+    ///
+    /// `Result<Option<RconParams>, mysql::Error>` - Returns the RCON parameters if found, otherwise `None`.
+    pub fn get_rcon_params_by_id(
+        &self,
+        id: u64,
+    ) -> Result<Option<RconParams>, mysql::Error> {
+        let mut conn = self.get_conn()?;
+
+        // Use `exec_first` which is optimized for fetching a single row.
+        // It returns an `Option` directly, simplifying the code.
+        let result: Option<(String, String, String)> = conn.exec_first(
+            "SELECT rcon_host, rcon_port, rcon_password FROM serveurs_actifs WHERE id = :id",
+            params! { "id" => id },
+        )?;
+
+        // Map the resulting tuple into the RconParams struct.
+        Ok(result.map(|(host, port, password)| RconParams {
+            host,
+            port,
+            password,
+        }))
     }
 
 }

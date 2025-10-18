@@ -92,7 +92,7 @@ fn on_player_connection_update(line: &str, serverlog_id: u32, co_type: &str) {
                     match db.creer_code_liaison(player_id, &nouveau_code, 10) {
                         Ok(_) => {
                             info!("Successfully saved linking code for player '{}'.", playername);
-                            // TODO : SEND THE CODE TO THE PLAYER
+                            // TODO : SEND THE CODE TO THE PLAYER (IF MINECRAFT)
                         }
                         Err(e) => {
                             error!(

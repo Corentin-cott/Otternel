@@ -27,6 +27,14 @@ pub struct Serveur {
     pub image: Option<String>,
 }
 
+/// A struct to hold RCON connection parameters.
+#[derive(Debug)]
+pub struct RconParams {
+    pub host: String,
+    pub port: String,
+    pub password: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[derive(Default)]
 pub struct JoueurStats {
