@@ -77,42 +77,11 @@ fn on_player_connection_update(line: &str, serverlog_id: u32, co_type: &str) {
 
     // We check if the player's account is link & if `co_type` = rejoint. If not, we generate a code to link it
     if co_type == "rejoint" {
-        match db.is_account_linked_to_user(player_id) {
-            Ok(is_linked) => {
-                if !is_linked {
-                    // TODO : CHECK IF A CODE AS ALREADY ACTIVE
-                    // 1. The account is not linked, generate a new code.
-                    let nouveau_code = helper::code_generator::generer_code_unique();
-                    info!(
-                        "Player '{}' is not linked. Generating code: {}",
-                        playername, nouveau_code
-                    );
-
-                    // 2. Save the code to the database with a 10-minute expiration.
-                    match db.creer_code_liaison(player_id, &nouveau_code, 10) {
-                        Ok(_) => {
-                            info!("Successfully saved linking code for player '{}'.", playername);
-                            // TODO : SEND THE CODE TO THE PLAYER (IF MINECRAFT)
-                        }
-                        Err(e) => {
-                            error!(
-                                "Failed to save linking code for player '{}': {}",
-                                playername, e
-                            );
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                error!(
-                    "Could not check if player '{}' is linked: {}",
-                    playername, e
-                );
-            }
+        if let Err(e) = helper::code_generator::handle_unlinked_player_join(&db, player_id, &playername, serverlog_id) {
+            error!("Failed to process player join for '{}': {}", playername, e);
         }
     }
-    // =======================================================
-
+    
     // We log the player connection in database
     let log = JoueurConnectionLog {
         serveur_id: server.id,

@@ -3,8 +3,9 @@ mod db;
 mod serverlog;
 mod helper;
 mod playerstats;
-use futures::future;
 
+use tokio::task;
+use futures::future;
 use colored::Colorize;
 use log::{info, error};
 use std::time::Duration;
@@ -42,7 +43,7 @@ async fn main() {
 
     // Start the watcher
     let log_folder = cfg.serverlog_folder.clone();
-    tokio::spawn(async move {
+    task::spawn_blocking(move || { // Use spawn_blocking and a normal closure
         if let Err(err) = serverlog::log_watcher::watch_serverlogs(&log_folder) {
             error!("Log watcher failed: {}", err);
         }
@@ -99,5 +100,22 @@ async fn periodic_playerstats_fetch() {
     // Launch minecraft player stats
     if let Err(e) = playerstats::minecraft_players::sync_mc_stats_to_db().await {
         error!("Erreur sync_mc_stats_to_db: {e:?}");
+    }
+
+    // Minecraft player stats fetch ended, send embed
+    if let Err(e) = send_discord_embed(
+        "otternel",
+        "",
+        "Enregistrement des stats de joueurs Minecraft",
+        "",
+        "Enregistrement des stats de joueurs Minecraft terminé.",
+        Some("126020".to_string()),
+        "",
+        "",
+        "",
+        "Otternel Service",
+        Some(chrono::Utc::now().to_rfc3339()),
+    ) {
+        error!("{e}");
     }
 }

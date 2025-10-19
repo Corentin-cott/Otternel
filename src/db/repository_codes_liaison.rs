@@ -2,23 +2,23 @@ use mysql::{params, prelude::Queryable};
 
 use super::repository_default::Database;
 
-impl Database {    
+impl Database {
     // ===========================
     // codes_liaison
     // ===========================
 
-    /// Crée un nouveau code de liaison pour un joueur et l'insère en base de données.
+    /// Creates a new linking code for a player and inserts it into the database.
     ///
     /// # Arguments
     ///
-    /// * `joueur_id` - L'ID du joueur qui demande la liaison.
-    /// * `code_valeur` - La chaîne de caractères unique générée pour le code.
-    /// * `duree_minutes` - La durée de validité du code en minutes.
+    /// * `joueur_id` - The ID of the player requesting the link.
+    /// * `code_valeur` - The unique string generated for the code.
+    /// * `duree_minutes` - The code's validity duration in minutes.
     ///
     /// # Returns
     ///
-    /// `Result<(), mysql::Error>` - Retourne Ok(()) si l'insertion a réussi.
-    pub fn creer_code_liaison(
+    /// `Result<(), mysql::Error>` - Returns Ok(()) if the insertion was successful.
+    pub fn create_linking_code(
         &self,
         joueur_id: u64,
         code_valeur: &str,
@@ -37,5 +37,30 @@ impl Database {
         )?;
 
         Ok(())
+    }
+
+    /// Checks if an active linking code exists for a given player.
+    ///
+    /// # Arguments
+    ///
+    /// * `joueur_id` - The ID of the player to check for an active code.
+    ///
+    /// # Returns
+    ///
+    /// `Result<bool, mysql::Error>` - Returns `Ok(true)` if an active code exists,
+    /// `Ok(false)` otherwise, or an error in case of a database issue.
+    pub fn is_linking_code_active_for_player_id(&self, joueur_id: u64) -> Result<bool, mysql::Error> {
+        let mut conn = self.get_conn()?;
+        
+        let code_existe: Option<u8> = conn.exec_first(
+            r#"SELECT EXISTS(
+                SELECT 1
+                FROM codes_liaison
+                WHERE joueur_id = :joueur_id AND expire_le > NOW()
+            )"#,
+            params! { "joueur_id" => joueur_id },
+        )?;
+
+        Ok(code_existe.map_or(false, |val| val == 1))
     }
 }

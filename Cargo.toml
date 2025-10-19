@@ -4,6 +4,7 @@ version = "1.0.0"
 edition = "2024"
 
 [dependencies]
+rcon = "0.5"
 rand = "0.8"
 futures = "0.3"
 dotenvy = "0.15"
@@ -20,7 +21,7 @@ colored = "2"
 chrono = { version = "0.4.41", features = ["serde"] }
 mysql = "26.0.1"
 futures-util = "0.3.31"
-tokio = { version = "1.47.1", features = ["rt", "rt-multi-thread", "macros"] }
+tokio = { version = "1.47.1", features = ["full"] }
 anyhow = "1.0.99"
 tar = "0.4.44"
 bollard = "0.19.2"
@@ -28,3 +29,5 @@ uuid = { version = "1.18.1", features = ["v4"] }
 fastnbt = "2.6.0"
 flate2 = "1.1.2"
 db = "0.0.0-alpha.101"
+
+thiserror = "1"

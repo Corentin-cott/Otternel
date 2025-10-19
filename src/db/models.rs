@@ -27,7 +27,6 @@ pub struct Serveur {
     pub image: Option<String>,
 }
 
-/// A struct to hold RCON connection parameters.
 #[derive(Debug)]
 pub struct RconParams {
     pub host: String,
@@ -57,15 +56,3 @@ pub struct JoueurStats {
     pub achievement: Option<serde_json::Value>,
     pub dern_enregistr: NaiveDateTime,
 }
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
-pub struct CodeLiaison {
-    pub id: u64,
-    pub joueur_id: u64,
-    pub code_liaison: String,
-    pub creer_le: NaiveDateTime,
-    pub expire_le: NaiveDateTime,
-    pub utilise_le: Option<NaiveDateTime>,
-}
-
