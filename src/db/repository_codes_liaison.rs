@@ -1,3 +1,4 @@
+use log::{error, warn, info, debug};
 use mysql::{params, prelude::Queryable};
 
 use super::repository_default::Database;
@@ -18,13 +19,18 @@ impl Database {
     /// # Returns
     ///
     /// `Result<(), mysql::Error>` - Returns Ok(()) if the insertion was successful.
-    pub fn create_linking_code(
+    pub fn save_linking_code(
         &self,
         joueur_id: u64,
         code_valeur: &str,
         duree_minutes: u32,
     ) -> Result<(), mysql::Error> {
         let mut conn = self.get_conn()?;
+
+        debug!(
+            "Saving linking code '{}' for player ID {} with duration {} minutes.",
+            code_valeur, joueur_id, duree_minutes
+        );
         
         conn.exec_drop(
             r#"INSERT INTO codes_liaison (joueur_id, code_liaison, cree_le, expire_le)

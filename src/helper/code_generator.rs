@@ -1,4 +1,4 @@
-use log::{error, info, debug};
+use log::{error, warn, info, debug};
 use crate::db::repository_default::Database;
 use crate::helper::rcon_helper::RconHelper;
 use crate::{helper};
@@ -15,7 +15,7 @@ const CHUNK_SIZE: usize = 3;
 /// ## Returns
 /// A `String` representing the generated linking code in the format "XXX-XXX-XXX".
 ///
-pub fn generer_code_unique() -> String {
+pub fn create_linking_code() -> String {
     let mut rng = thread_rng();
     let mut result = String::with_capacity(CODE_LENGTH + 2); // 9 chars + 2 tirets
 
@@ -46,6 +46,13 @@ pub fn generer_code_unique() -> String {
 /// * `Result<(), Box<dyn std::error::Error>>` - Error otherwise
 /// 
 pub fn handle_unlinked_player_join(db: &Database, player_id: u64, playername: &str, serverlog_id: u32) -> Result<(), Box<dyn std::error::Error>> {
+    // Fist we check if the linking code feature is enabled
+    let linking_code_enabled = std::env::var("LINKING_CODE_ENABLED").unwrap_or("false".to_string());
+    if linking_code_enabled.to_lowercase() != "true" {
+        warn!("LINKING_CODE_ENABLED is false or malformed : skipping code generation for player '{}'.", playername);
+        return Ok(());
+    }
+
     // Checks if the generation of a code is necessary
     let is_linked = db.is_account_linked_to_user(player_id)?;
     if is_linked { return Ok(()); }
@@ -53,11 +60,17 @@ pub fn handle_unlinked_player_join(db: &Database, player_id: u64, playername: &s
     let is_code_active = db.is_linking_code_active_for_player_id(player_id)?;
     if is_code_active { return Ok(()); }
 
+    // Get expiration time from env, default to 10 minutes if not set or malformed
+    let code_duration_minutes: u32 = std::env::var("LINKING_CODE_EXPIRATION_MIN") 
+        .unwrap_or("10".to_string())
+        .parse()
+        .unwrap_or(10);
+
     // Player is not linked and has no active code, proceed to generate one
-    let new_code = helper::code_generator::generer_code_unique();
+    let new_code = helper::code_generator::create_linking_code();
     info!("Player '{}' is not linked. Generating code: {}", playername, new_code);
 
-    db.create_linking_code(player_id, &new_code, 10)?;
+    db.save_linking_code(player_id, &new_code, code_duration_minutes)?;
     debug!("Successfully saved linking code for player '{}'.", playername);
 
     // TODO : DEPENDING ON THE GAME OF THE PLAYER ID, CHANGE THE LOGIC
