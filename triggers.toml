@@ -35,242 +35,240 @@ function = "on_player_message"
 
 # DEATH MESSAGE TRIGGERS
 
-# DEATH MESSAGE TRIGGERS
-
 [[trigger]]
 name = "minecraft_player_death_arrow"
 game = "minecraft"
-pattern = ".* .* .* was shot by .*"
+pattern = ".* .* \\S+ was shot by .*"
 serverlog_ids = [1, 2]
 function = "on_player_death"
 
 [[trigger]]
 name = "minecraft_player_death_cactus"
 game = "minecraft"
-pattern = ".* .* .* was pricked to death"
+pattern = ".* .* \\S+ was pricked to death"
 serverlog_ids = [1, 2]
 function = "on_player_death"
 
 [[trigger]]
 name = "minecraft_player_death_campfire"
 game = "minecraft"
-pattern = ".* .* .* went up in flames"
+pattern = ".* .* \\S+ went up in flames"
 serverlog_ids = [1, 2]
 function = "on_player_death"
 
 [[trigger]]
 name = "minecraft_player_death_cramming"
 game = "minecraft"
-pattern = ".* .* .* was squished too much"
+pattern = ".* .* \\S+ was squished too much"
 serverlog_ids = [1, 2]
 function = "on_player_death"
 
 [[trigger]]
 name = "minecraft_player_death_dragon_breath"
 game = "minecraft"
-pattern = ".* .* .* was roasted in dragon's breath"
+pattern = ".* .* \\S+ was roasted in dragon's breath"
 serverlog_ids = [1, 2]
 function = "on_player_death"
 
 [[trigger]]
 name = "minecraft_player_death_drown"
 game = "minecraft"
-pattern = ".* .* .* drowned"
+pattern = ".* .* \\S+ drowned"
 serverlog_ids = [1, 2]
 function = "on_player_death"
 
 [[trigger]]
 name = "minecraft_player_death_dry_out"
 game = "minecraft"
-pattern = ".* .* .* died from dehydration"
+pattern = ".* .* \\S+ died from dehydration"
 serverlog_ids = [1, 2]
 function = "on_player_death"
 
 [[trigger]]
 name = "minecraft_player_death_explosion"
 game = "minecraft"
-pattern = ".* .* .* blew up"
+pattern = ".* .* \\S+ blew up"
 serverlog_ids = [1, 2]
 function = "on_player_death"
 
 [[trigger]]
 name = "minecraft_player_death_fall"
 game = "minecraft"
-pattern = ".* .* .* hit the ground too hard"
+pattern = ".* .* \\S+ hit the ground too hard"
 serverlog_ids = [1, 2]
 function = "on_player_death"
 
 [[trigger]]
 name = "minecraft_player_death_falling_anvil"
 game = "minecraft"
-pattern = ".* .* .* was squashed by a falling anvil"
+pattern = ".* .* \\S+ was squashed by a falling anvil"
 serverlog_ids = [1, 2]
 function = "on_player_death"
 
 [[trigger]]
 name = "minecraft_player_death_falling_block"
 game = "minecraft"
-pattern = ".* .* .* was squashed by a falling block"
+pattern = ".* .* \\S+ was squashed by a falling block"
 serverlog_ids = [1, 2]
 function = "on_player_death"
 
 [[trigger]]
 name = "minecraft_player_death_falling_stalactite"
 game = "minecraft"
-pattern = ".* .* .* was skewered by a falling stalactite"
+pattern = ".* .* \\S+ was skewered by a falling stalactite"
 serverlog_ids = [1, 2]
 function = "on_player_death"
 
 [[trigger]]
 name = "minecraft_player_death_fireball"
 game = "minecraft"
-pattern = ".* .* .* was fireballed by .*"
+pattern = ".* .* \\S+ was fireballed by .*"
 serverlog_ids = [1, 2]
 function = "on_player_death"
 
 [[trigger]]
 name = "minecraft_player_death_fireworks"
 game = "minecraft"
-pattern = ".* .* .* went off with a bang"
+pattern = ".* .* \\S+ went off with a bang"
 serverlog_ids = [1, 2]
 function = "on_player_death"
 
 [[trigger]]
 name = "minecraft_player_death_fly_into_wall"
 game = "minecraft"
-pattern = ".* .* .* experienced kinetic energy"
+pattern = ".* .* \\S+ experienced kinetic energy"
 serverlog_ids = [1, 2]
 function = "on_player_death"
 
 [[trigger]]
 name = "minecraft_player_death_freeze"
 game = "minecraft"
-pattern = ".* .* .* froze to death"
+pattern = ".* .* \\S+ froze to death"
 serverlog_ids = [1, 2]
 function = "on_player_death"
 
 [[trigger]]
 name = "minecraft_player_death_generic"
 game = "minecraft"
-pattern = ".* .* .* died"
+pattern = ".* .* \\S+ died"
 serverlog_ids = [1, 2]
 function = "on_player_death"
 
 [[trigger]]
 name = "minecraft_player_death_hot_floor"
 game = "minecraft"
-pattern = ".* .* .* discovered the floor was lava"
+pattern = ".* .* \\S+ discovered the floor was lava"
 serverlog_ids = [1, 2]
 function = "on_player_death"
 
 [[trigger]]
 name = "minecraft_player_death_in_fire"
 game = "minecraft"
-pattern = ".* .* .* went up in flames"
+pattern = ".* .* \\S+ went up in flames"
 serverlog_ids = [1, 2]
 function = "on_player_death"
 
 [[trigger]]
 name = "minecraft_player_death_in_wall"
 game = "minecraft"
-pattern = ".* .* .* suffocated in a wall"
+pattern = ".* .* \\S+ suffocated in a wall"
 serverlog_ids = [1, 2]
 function = "on_player_death"
 
 [[trigger]]
 name = "minecraft_player_death_lava"
 game = "minecraft"
-pattern = ".* .* .* tried to swim in lava"
+pattern = ".* .* \\S+ tried to swim in lava"
 serverlog_ids = [1, 2]
 function = "on_player_death"
 
 [[trigger]]
 name = "minecraft_player_death_lightning"
 game = "minecraft"
-pattern = ".* .* .* was struck by lightning"
+pattern = ".* .* \\S+ was struck by lightning"
 serverlog_ids = [1, 2]
 function = "on_player_death"
 
 [[trigger]]
 name = "minecraft_player_death_magic"
 game = "minecraft"
-pattern = ".* .* .* was killed by magic"
+pattern = ".* .* \\S+ was killed by magic"
 serverlog_ids = [1, 2]
 function = "on_player_death"
 
 [[trigger]]
 name = "minecraft_player_death_mob"
 game = "minecraft"
-pattern = ".* .* .* was slain by .*"
+pattern = ".* .* \\S+ was slain by .*"
 serverlog_ids = [1, 2]
 function = "on_player_death"
 
 [[trigger]]
 name = "minecraft_player_death_on_fire"
 game = "minecraft"
-pattern = ".* .* .* burned to death"
+pattern = ".* .* \\S+ burned to death"
 serverlog_ids = [1, 2]
 function = "on_player_death"
 
 [[trigger]]
 name = "minecraft_player_death_out_of_world"
 game = "minecraft"
-pattern = ".* .* .* fell out of the world"
+pattern = ".* .* \\S+ fell out of the world"
 serverlog_ids = [1, 2]
 function = "on_player_death"
 
 [[trigger]]
 name = "minecraft_player_death_starve"
 game = "minecraft"
-pattern = ".* .* .* starved to death"
+pattern = ".* .* \\S+ starved to death"
 serverlog_ids = [1, 2]
 function = "on_player_death"
 
 [[trigger]]
 name = "minecraft_player_death_sting"
 game = "minecraft"
-pattern = ".* .* .* was stung to death"
+pattern = ".* .* \\S+ was stung to death"
 serverlog_ids = [1, 2]
 function = "on_player_death"
 
 [[trigger]]
 name = "minecraft_player_death_sweet_berry_bush"
 game = "minecraft"
-pattern = ".* .* .* was poked to death by a sweet berry bush"
+pattern = ".* .* \\S+ was poked to death by a sweet berry bush"
 serverlog_ids = [1, 2]
 function = "on_player_death"
 
 [[trigger]]
 name = "minecraft_player_death_thorns"
 game = "minecraft"
-pattern = ".* .* .* was killed while trying to hurt .*"
+pattern = ".* .* \\S+ was killed while trying to hurt .*"
 serverlog_ids = [1, 2]
 function = "on_player_death"
 
 [[trigger]]
 name = "minecraft_player_death_trident"
 game = "minecraft"
-pattern = ".* .* .* was impaled by .*"
+pattern = ".* .* \\S+ was impaled by .*"
 serverlog_ids = [1, 2]
 function = "on_player_death"
 
 [[trigger]]
 name = "minecraft_player_death_wither"
 game = "minecraft"
-pattern = ".* .* .* withered away"
+pattern = ".* .* \\S+ withered away"
 serverlog_ids = [1, 2]
 function = "on_player_death"
 
 [[trigger]]
 name = "minecraft_player_death_wither_skull"
 game = "minecraft"
-pattern = ".* .* .* was shot by a skull from .*"
+pattern = ".* .* \\S+ was shot by a skull from .*"
 serverlog_ids = [1, 2]
 function = "on_player_death"
 
 [[trigger]]
 name = "minecraft_player_death_explosion"
 game = "minecraft"
-pattern = ".* .* .* was blown up by .*"
+pattern = ".* .* \\S+ was blown up by .*"
 serverlog_ids = [1, 2]
 function = "on_player_death"
