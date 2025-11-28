@@ -91,6 +91,9 @@ fn on_player_connection_update(line: &str, serverlog_id: u32, co_type: &str) {
     if let Err(e) = db.insert_joueur_connection_log(&log) {
         warn!("Failed to insert player connection log: {:?}", e);
     }
+    if let Err(e) = db.update_last_connection(player_id) {
+        warn!("Failed to update last player connection: {:?}", e);
+    }
 
     // Send Discord embed with the player's name
     if let Err(e) = helper::webhook_discord::send_discord_embed(

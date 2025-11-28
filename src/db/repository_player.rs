@@ -38,6 +38,28 @@ impl Database {
         Ok(count.unwrap_or(0) > 0)
     }
 
+    /// Met à jour la date de dernière connexion d'un joueur via son ID interne.
+    ///
+    /// # Arguments
+    /// * `joueur_id` - L'ID unique du joueur dans la base de données (table `joueurs`).
+    pub fn update_last_connection(&self, joueur_id: u64) -> Result<(), mysql::Error> {
+        let mut conn = self.get_conn()?;
+
+        // On récupère la date actuelle UTC formatée comme dans tes autres méthodes
+        let now = chrono::Utc::now().naive_utc();
+        let date_str = now.format("%Y-%m-%d %H:%M:%S").to_string();
+
+        conn.exec_drop(
+            r"UPDATE joueurs SET derniere_co = :date WHERE id = :id",
+            params! {
+                "date" => date_str,
+                "id" => joueur_id,
+            },
+        )?;
+
+        Ok(())
+    }
+
     // ===========================
     // joueurs_connections_log
     // ===========================
