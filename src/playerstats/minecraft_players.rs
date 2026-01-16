@@ -85,6 +85,19 @@ pub async fn sync_mc_stats_to_db() -> anyhow::Result<()> {
 
         // Filter and get specific values from the stats. Fallback to 0 if none found
         for (uuid, json) in stats_map {
+            // Validate and format UUID
+            let uuid = match check_and_format_minecraft_uuid(&uuid) {
+                Ok(formatted_uuid) => formatted_uuid,
+                Err(e) => {
+                    warn!(
+                "Invalid minecraft UUID : {} ; error: {}",
+                uuid.yellow().bold(),
+                e
+            );
+                    continue;
+                }
+            };
+
             // We add the player in case they're not in the database already
             match db.add_player_if_not_exist("minecraft", uuid.clone()) {
                 Ok(player_id) => {
