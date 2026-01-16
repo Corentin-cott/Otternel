@@ -70,11 +70,11 @@ pub async fn sync_mc_stats_to_db() -> anyhow::Result<()> {
                 total_cobblemon_trainer = trainers;
             }
             Err(e) => {
-                debug!(
-            "Failed to fetch cobblemon stats for server {}: {}",
-            server.nom.yellow().bold(),
-            e.to_string().yellow().bold()
-        );
+                    debug!(
+                    "Failed to fetch cobblemon stats for server {}: {}",
+                    server.nom.yellow().bold(),
+                    e.to_string().yellow().bold()
+                );
             }
         }
 
