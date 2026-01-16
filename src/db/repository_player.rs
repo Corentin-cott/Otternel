@@ -3,6 +3,8 @@ use log::debug;
 use mysql::{params, prelude::Queryable};
 use serde::Deserialize;
 use crate::db::models::{JoueurConnectionLog};
+use crate::helper;
+use log::{warn};
 
 use super::repository_default::Database;
 
@@ -133,6 +135,19 @@ impl Database {
             .call()?
             .into_json()?;
 
+        // Checking player uuid (account_id)
+        let player_account_id = match helper::minecraft_account_formatter::check_and_format_minecraft_uuid(&resp.id) {
+            Ok(formatted_uuid) => formatted_uuid,
+            Err(e) => {
+                warn!(
+                    "Invalid minecraft UUID : {} ; error: {}",
+                    &resp.id.yellow().bold(),
+                    e
+                );
+                return Err(Box::new(e));
+            }
+        };
+
         // Insert new player into DB
         conn.exec_drop(
             r#"
@@ -142,7 +157,7 @@ impl Database {
             params! {
             "utilisateur_id" => Option::<u64>::None,
             "jeu" => "Minecraft",
-            "compte_id" => &resp.id,
+            "compte_id" => player_account_id,
             "playername" => &resp.name,
             "premiere_co" => &date_str,
             "derniere_co" => &date_str,
