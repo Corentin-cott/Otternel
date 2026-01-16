@@ -5,6 +5,7 @@ use fastnbt::from_bytes;
 use fastnbt::Value as NbtValue;
 use log::{debug, info, warn};
 use std::io::Read;
+use crate::playerstats::cobblemon_pokemon_fetch;
 use crate::helper;
 
 pub async fn fetch_cobblemon_stats(
@@ -28,7 +29,7 @@ pub async fn fetch_cobblemon_stats(
     let mut total_cobblemon_pokemon = 0;
     let mut total_cobblemon_trainer = 0;
 
-    match cobblemon_stats::fetch_cobblemon_player_pokemons(server_id, container_name, world_name, fetcher, remote_path_playerpartystore).await {
+    match cobblemon_pokemon_fetch::fetch_cobblemon_player_pokemons(server_id, container_name, world_name, fetcher, &remote_path_playerpartystore).await {
         Ok((pokemon, trainers)) => {
             total_cobblemon_pokemon = pokemon;
             total_cobblemon_trainer = trainers;
@@ -36,8 +37,8 @@ pub async fn fetch_cobblemon_stats(
         Err(e) => {
             debug!(
                 "Failed to fetch cobblemon player pokemon for server {}: {}",
-                server.nom.yellow().bold(),
-                e.to_string().yellow().bold()
+                container_name,
+                e
             );
         }
     }
