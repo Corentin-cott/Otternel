@@ -86,7 +86,7 @@ pub async fn sync_mc_stats_to_db() -> anyhow::Result<()> {
         // Filter and get specific values from the stats. Fallback to 0 if none found
         for (uuid, json) in stats_map {
             // Validate and format UUID
-            let uuid = match check_and_format_minecraft_uuid(&uuid) {
+            let uuid = match helper::minecraft_account_formatter::check_and_format_minecraft_uuid(&uuid) {
                 Ok(formatted_uuid) => formatted_uuid,
                 Err(e) => {
                     warn!(

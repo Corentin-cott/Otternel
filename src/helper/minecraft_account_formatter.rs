@@ -2,6 +2,12 @@ use colored::*;
 use log::{info, warn};
 
 pub(crate) fn check_and_format_minecraft_uuid(player_uuid: &str) -> Result<String, fern::InitError> {
+    info!(
+        "{} {}",
+        "Cheking player uuid:",
+        player_uuid.yellow()
+    );
+
     // dash format : 8-4-4-4-12
     const UUID_LEN_WITH_DASHES: usize = 36;
     const UUID_LEN_WITHOUT_DASHES: usize = 32;
@@ -61,7 +67,10 @@ pub(crate) fn check_and_format_minecraft_uuid(player_uuid: &str) -> Result<Strin
                 "UUID is invalid (wrong format):".red(),
                 player_uuid.yellow()
             );
-            return Err(fern::InitError::ConfigError);
+            return Err(fern::InitError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Invalid Minecraft UUID",
+            )));
         }
     }
 
@@ -71,5 +80,8 @@ pub(crate) fn check_and_format_minecraft_uuid(player_uuid: &str) -> Result<Strin
         player_uuid.yellow()
     );
 
-    Err(fern::InitError::ConfigError)
+    Err(fern::InitError::Io(std::io::Error::new(
+        std::io::ErrorKind::InvalidInput,
+        "Invalid Minecraft UUID",
+    )))
 }
