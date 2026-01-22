@@ -29,7 +29,7 @@ pub async fn fetch_cobblemon_stats(
     let mut total_cobblemon_pokemon = 0;
     let mut total_cobblemon_trainer = 0;
 
-    match cobblemon_pokemon_fetch::fetch_cobblemon_player_pokemons(server_id, container_name, world_name, fetcher, &remote_path_playerpartystore).await {
+    match cobblemon_pokemon_fetch::fetch_cobblemon_player_pokemons(server_id, container_name, world_name, &fetcher, &remote_path_playerpartystore, &db).await {
         Ok((pokemon, trainers)) => {
             total_cobblemon_pokemon = pokemon;
             total_cobblemon_trainer = trainers;

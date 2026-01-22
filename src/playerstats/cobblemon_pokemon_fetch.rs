@@ -4,6 +4,8 @@ use fastnbt::from_bytes;
 use fastnbt::Value as NbtValue;
 use log::{info, warn};
 use std::io::Read;
+// Assurez-vous que le chemin vers DockerFetcher est correct selon votre structure de dossiers
+use crate::playerstats::DockerFetcher; 
 
 #[derive(Debug)]
 struct Pokemon {
@@ -20,19 +22,18 @@ struct Pokemon {
 pub async fn fetch_cobblemon_player_pokemons(
     server_id: u64,
     container_name: &str,
-    world_name: &str,
-    fetcher: DockerFetcher,
+    _world_name: &str, // "_" car inutilisé pour l'instant
+    fetcher: &DockerFetcher,
     remote_path: &str,
+    db: &crate::Database // Vérifiez que "Database" est bien accessible à la racine
 ) -> Result<(usize, usize)> {
+    
     let dat_files = fetcher
-        .fetch_files_by_extension(container_name, &remote_path, "dat")
+        .fetch_files_by_extension(container_name, remote_path, "dat")
         .await?;
 
     if dat_files.is_empty() {
-        info!(
-            "No playerpartystore folder or .dat file found for '{}' (path: {})",
-            container_name, remote_path
-        );
+        info!("No playerpartystore folder or .dat file found for '{}' (path: {})", container_name, remote_path);
         return Ok((0, 0));
     }
 
@@ -40,109 +41,55 @@ pub async fn fetch_cobblemon_player_pokemons(
     let mut total_joueurs = 0usize;
 
     for (file_key, bytes) in dat_files {
-        let uuid = file_key; // Filename = joueur UUID
+        let uuid = file_key;
 
-        // Décompression GZIP si nécessaire
-        let decompressed_bytes = if bytes.len() >= 2 && bytes[0] == 0x1f && bytes[1] == 0x8b {
-            let mut gz = GzDecoder::new(&bytes[..]);
-            let mut decomp = Vec::new();
-            if let Err(e) = gz.read_to_end(&mut decomp) {
-                warn!("Decompression error {}: {:?}", uuid, e);
-                continue;
+        // Gestion propre de la décompression GZIP
+        let decompressed_bytes = if is_gzipped(&bytes) {
+            match decompress_gzip(&bytes) {
+                Ok(data) => data,
+                Err(e) => {
+                    warn!("Decompression error for {}: {:?}", uuid, e);
+                    continue;
+                }
             }
-            decomp
         } else {
             bytes
         };
 
         match from_bytes::<NbtValue>(&decompressed_bytes) {
-            Ok(nbt) => {
-                if let NbtValue::Compound(compound) = nbt {
-                    let mut team: Vec<Pokemon> = Vec::new();
+            Ok(NbtValue::Compound(compound)) => {
+                let mut team: Vec<Pokemon> = Vec::new();
 
-                    for i in 0.. {
-                        let slot_key = format!("Slot{}", i);
-                        if let Some(NbtValue::Compound(poke)) = compound.get(&slot_key) {
-                            let species = match poke.get("Species") {
-                                Some(NbtValue::String(s)) => s.clone(),
-                                _ => "unknown".to_string(),
-                            };
-                            let form = match poke.get("FormId") {
-                                Some(NbtValue::String(s)) => Some(s.clone()),
-                                _ => None,
-                            };
-                            let gender = match poke.get("Gender") {
-                                Some(NbtValue::String(s)) => Some(s.clone()),
-                                _ => None,
-                            };
-                            let nickname = match poke.get("Nickname") {
-                                Some(NbtValue::String(s)) => Some(s.clone()),
-                                _ => None,
-                            };
-                            let level = match poke.get("Level") {
-                                Some(NbtValue::Int(n)) => Some(*n),
-                                _ => None,
-                            };
-                            let shiny = match poke.get("Shiny") {
-                                Some(NbtValue::Byte(b)) => Some(*b != 0),
-                                Some(NbtValue::Int(i)) => Some(*i != 0),
-                                _ => None,
-                            };
-                            let pokemon_uuid = match poke.get("PokemonUUID").or_else(|| poke.get("UUID")) {
-                                Some(NbtValue::String(s)) => Some(s.clone()),
-                                Some(NbtValue::IntArray(arr)) => {
-                                    if arr.len() == 4 {
-                                        Some(format!(
-                                            "{:08x}-{:04x}-{:04x}-{:04x}-{:012x}",
-                                            arr[0],
-                                            (arr[1] >> 16) & 0xFFFF,
-                                            arr[1] & 0xFFFF,
-                                            (arr[2] >> 16) & 0xFFFF,
-                                            (((arr[2] & 0xFFFF) as u64) << 32) | ((arr[3] as u32) as u64)
-                                        ))
-                                    } else {
-                                        None
-                                    }
-                                }
-                                _ => None,
-                            };
-                            let do_uuid = match poke.get("PokemonOriginalTrainer") {
-                                Some(NbtValue::String(s)) => Some(s.clone()),
-                                Some(NbtValue::IntArray(arr)) => {
-                                    if arr.len() == 4 {
-                                        Some(format!(
-                                            "{:08x}-{:04x}-{:04x}-{:04x}-{:012x}",
-                                            arr[0],
-                                            (arr[1] >> 16) & 0xFFFF,
-                                            arr[1] & 0xFFFF,
-                                            (arr[2] >> 16) & 0xFFFF,
-                                            (((arr[2] & 0xFFFF) as u64) << 32) | ((arr[3] as u32) as u64)
-                                        ))
-                                    } else {
-                                        None
-                                    }
-                                }
-                                _ => None,
-                            };
+                // On itère tant qu'on trouve des slots (Slot0, Slot1, etc.)
+                for i in 0.. {
+                    let slot_key = format!("Slot{}", i);
+                    
+                    if let Some(NbtValue::Compound(poke_nbt)) = compound.get(&slot_key) {
+                        // --- PARSING SIMPLIFIÉ GRÂCE AUX HELPERS ---
+                        let species = get_string(poke_nbt, "Species").unwrap_or_else(|| "unknown".to_string());
+                        let form = get_string(poke_nbt, "FormId");
+                        let gender = get_string(poke_nbt, "Gender");
+                        let nickname = get_string(poke_nbt, "Nickname");
+                        let level = get_int(poke_nbt, "Level");
+                        let shiny = get_bool(poke_nbt, "Shiny");
+                        
+                        // Gestion des UUIDs (parfois appelés UUID, parfois PokemonUUID)
+                        let pokemon_uuid = get_uuid(poke_nbt, "PokemonUUID").or_else(|| get_uuid(poke_nbt, "UUID"));
+                        let do_uuid = get_uuid(poke_nbt, "PokemonOriginalTrainer");
 
-                            team.push(Pokemon {
-                                species,
-                                form,
-                                gender,
-                                nickname,
-                                level,
-                                shiny,
-                                do_uuid,
-                                pokemon_uuid,
-                            });
-                        } else {
-                            break;
-                        }
+                        team.push(Pokemon {
+                            species, form, gender, nickname, level, shiny, do_uuid, pokemon_uuid
+                        });
+                    } else {
+                        break; // Fin de l'équipe
                     }
+                }
 
+                if !team.is_empty() {
                     total_pokemon += team.len();
                     total_joueurs += 1;
 
+                    // Préparation des données pour la BDD (Array fixe de 6 tuples)
                     let mut pkmn_data = [(None, None, None, None, None, None, None, None); 6];
 
                     for (i, poke) in team.iter().enumerate().take(6) {
@@ -159,15 +106,71 @@ pub async fn fetch_cobblemon_player_pokemons(
                     }
 
                     if let Err(e) = db.insert_joueur_pokemon(server_id, &uuid, &pkmn_data) {
-                        warn!("Erreur insertion joueurs_pokemon pour {}: {:?}", uuid, e);
+                        warn!("Database insertion error for {}: {:?}", uuid, e);
                     }
-                } else {
-                    println!("Unexpected NBT root type for {}", uuid);
                 }
             }
-            Err(e) => warn!("Can't parse NBT for {}: {:?}", uuid, e),
+            Ok(_) => warn!("Unexpected NBT root type for {}", uuid),
+            Err(e) => warn!("NBT parse error for {}: {:?}", uuid, e),
         }
     }
 
     Ok((total_pokemon, total_joueurs))
+}
+
+// --- FONCTIONS UTILITAIRES (Helpers) ---
+
+fn is_gzipped(bytes: &[u8]) -> bool {
+    bytes.len() >= 2 && bytes[0] == 0x1f && bytes[1] == 0x8b
+}
+
+fn decompress_gzip(bytes: &[u8]) -> std::io::Result<Vec<u8>> {
+    let mut gz = GzDecoder::new(bytes);
+    let mut decomp = Vec::new();
+    gz.read_to_end(&mut decomp)?;
+    Ok(decomp)
+}
+
+// Récupère une String depuis le NBT
+fn get_string(nbt: &fastnbt::Compound, key: &str) -> Option<String> {
+    match nbt.get(key) {
+        Some(NbtValue::String(s)) => Some(s.clone()),
+        _ => None,
+    }
+}
+
+// Récupère un Int (i32) depuis le NBT
+fn get_int(nbt: &fastnbt::Compound, key: &str) -> Option<i32> {
+    match nbt.get(key) {
+        Some(NbtValue::Int(i)) => Some(*i),
+        _ => None,
+    }
+}
+
+// Récupère un Booléen (souvent stocké en Byte ou Int dans le NBT Minecraft)
+fn get_bool(nbt: &fastnbt::Compound, key: &str) -> Option<bool> {
+    match nbt.get(key) {
+        Some(NbtValue::Byte(b)) => Some(*b != 0),
+        Some(NbtValue::Int(i)) => Some(*i != 0),
+        _ => None,
+    }
+}
+
+// Récupère un UUID (String ou IntArray[4])
+fn get_uuid(nbt: &fastnbt::Compound, key: &str) -> Option<String> {
+    match nbt.get(key) {
+        Some(NbtValue::String(s)) => Some(s.clone()),
+        Some(NbtValue::IntArray(arr)) if arr.len() == 4 => {
+            // Conversion standard Minecraft IntArray -> UUID String
+            Some(format!(
+                "{:08x}-{:04x}-{:04x}-{:04x}-{:012x}",
+                arr[0] as u32,
+                (arr[1] >> 16) & 0xFFFF,
+                arr[1] & 0xFFFF,
+                (arr[2] >> 16) & 0xFFFF,
+                (((arr[2] & 0xFFFF) as u64) << 32) | ((arr[3] as u32) as u64)
+            ))
+        }
+        _ => None,
+    }
 }
