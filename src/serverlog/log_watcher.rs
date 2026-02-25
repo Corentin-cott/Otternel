@@ -243,21 +243,17 @@ fn read_new(path: &PathBuf, positions: &mut HashMap<PathBuf, u64>, compiled_trig
         };
 
         if let (Some(id), Some(line)) = (serverlog_id, last_line) {
-            // --- PATCH TEMPORAIRE TODO : REFAIRE CE TRUC ---
-            // On cherche la position du premier '['
-            // Si on le trouve, on coupe la string à partir de là. Sinon, on garde tout.
+            // Check first '['. If found, cut string starting there.
             let start_index = line.find('[').unwrap_or(0);
             let cleaned_line = &line[start_index..];
-            // ------------------------
 
             // Debug: print only the last line for visibility
             debug!("{} (last line)", path.display().to_string().green().bold());
-            // Affiche la ligne nettoyée
             debug!("{}", cleaned_line.to_string().bright_blue().italic());
 
             // Match triggers only against the last (complete) line
             for (re, func, ids_opt) in compiled_triggers {
-                // Utilise 'cleaned_line' au lieu de 'line' ici
+                // Using cleaned line and not line
                 if re.is_match(cleaned_line) {
                     if ids_opt.as_ref().map(|ids| ids.contains(&id)).unwrap_or(true) {
                         // Envoie la ligne nettoyée ou l'originale selon ton besoin
