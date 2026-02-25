@@ -243,15 +243,21 @@ fn read_new(path: &PathBuf, positions: &mut HashMap<PathBuf, u64>, compiled_trig
         };
 
         if let (Some(id), Some(line)) = (serverlog_id, last_line) {
+            // Check first '['. If found, cut string starting there.
+            let start_index = line.find('[').unwrap_or(0);
+            let cleaned_line = &line[start_index..];
+
             // Debug: print only the last line for visibility
             debug!("{} (last line)", path.display().to_string().green().bold());
-            debug!("{}", line.to_string().bright_blue().italic());
+            debug!("{}", cleaned_line.to_string().bright_blue().italic());
 
             // Match triggers only against the last (complete) line
             for (re, func, ids_opt) in compiled_triggers {
-                if re.is_match(line) {
+                // Using cleaned line and not line
+                if re.is_match(cleaned_line) {
                     if ids_opt.as_ref().map(|ids| ids.contains(&id)).unwrap_or(true) {
-                        serverlog::actions::dispatch(func, line, id);
+                        // Envoie la ligne nettoyée ou l'originale selon ton besoin
+                        serverlog::actions::dispatch(func, cleaned_line, id);
                     }
                 }
             }
