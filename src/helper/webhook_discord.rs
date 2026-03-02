@@ -107,6 +107,49 @@ pub fn send_discord_embed(
     }
 }
 
+/// Sends a simple Discord message (without embed) via a webhook for a specific identity.
+///
+/// # Parameters
+/// - webhook_identity: Which webhook configuration to use.
+/// - content: The message content to send.
+///
+/// # Returns
+/// Ok(()) if the webhook is sent or disabled; Err(String) if an error occurs.
+pub fn send_discord_message(
+    webhook_identity: &str,
+    content: &str,
+) -> Result<(), String> {
+    // Get the webhook configuration
+    let (_identity, activated, url) = get_webhook_config(webhook_identity)?;
+    if !activated.eq_ignore_ascii_case("true") || url.is_empty() {
+        return Ok(());
+    }
+
+    // Do not send empty messages
+    if content.trim().is_empty() {
+        return Ok(());
+    }
+
+    // Build the payload (simple content only)
+    let payload = serde_json::json!({
+        "content": content
+    });
+
+    // Sending
+    let resp = ureq::post(url)
+        .set("Content-Type", "application/json")
+        .send_json(payload);
+
+    match resp {
+        Ok(_) => Ok(()),
+        Err(ureq::Error::Status(code, response)) => {
+            let body = response.into_string().unwrap_or_default();
+            Err(format!("webhook send error: status code {code}, body: {body}"))
+        }
+        Err(e) => Err(format!("webhook send error: {e}")),
+    }
+}
+
 /// # Parameters
 /// * `webhook_identity` - A string slice that identifies the webhook. Supported values are:
 ///     - `"otternel"`
@@ -154,6 +197,16 @@ fn get_webhook_config(webhook_identity: &str) -> Result<(&'static str, &'static 
             let url: &'static str = Box::leak(cfg.multiloutre_bot_webhook_url.into_boxed_str());
             Ok(("multiloutre", activated, url))
         }
+        "mcmyadmin" => {
+            let activated: &'static str = Box::leak(cfg.mcmyadmin_webhook_activated.into_boxed_str());
+            let url: &'static str = Box::leak(cfg.mcmyadmin_webhook_url.into_boxed_str());
+            Ok(("mcmyadmin", activated, url))
+        }
+        "mcmyadmin_secondary" => {
+            let activated: &'static str = Box::leak(cfg.mcmyadmin_secondary_webhook_activated.into_boxed_str());
+            let url: &'static str = Box::leak(cfg.mcmyadmin_secondary_webhook_url.into_boxed_str());
+            Ok(("mcmyadmin_secondary", activated, url))
+        }
         other => Err(format!("unknown webhook identity: {other}")),
     }
 }
@@ -184,5 +237,12 @@ pub fn get_webhook_identity_by_server_id(game: String) -> &'static str {
         "minecraft" => "mineotter",
         "palworld" => "multiloutre",
         _ => "otternel",
+    }
+}
+
+pub fn get_webhook_mcmyadmin_by_server_id(server_id: Option<u32>) -> &'static str {
+    match server_id {
+        Some(1) => "mcmyadmin",
+        _ => "mcmyadmin_secondary",
     }
 }
