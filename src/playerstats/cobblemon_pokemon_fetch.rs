@@ -4,8 +4,8 @@ use fastnbt::from_bytes;
 use fastnbt::Value as NbtValue;
 use log::{info, warn};
 use std::io::Read;
-// Assurez-vous que le chemin vers DockerFetcher est correct selon votre structure de dossiers
-use crate::playerstats::DockerFetcher; 
+use std::collections::HashMap;
+use crate::playerstats::DockerFetcher;
 
 #[derive(Debug)]
 struct Pokemon {
@@ -22,28 +22,32 @@ struct Pokemon {
 pub async fn fetch_cobblemon_player_pokemons(
     server_id: u64,
     container_name: &str,
-    _world_name: &str, // "_" car inutilisé pour l'instant
+    _world_name: &str, // Unused for now
     fetcher: &DockerFetcher,
     remote_path: &str,
-    db: &crate::Database // Vérifiez que "Database" est bien accessible à la racine
+    db: &crate::db::repository_default::Database,
 ) -> Result<(usize, usize)> {
-    
+
     let dat_files = fetcher
         .fetch_files_by_extension(container_name, remote_path, "dat")
         .await?;
 
     if dat_files.is_empty() {
-        info!("No playerpartystore folder or .dat file found for '{}' (path: {})", container_name, remote_path);
+        info!(
+            "No playerpartystore folder or .dat file found for '{}' (path: {})",
+            container_name,
+            remote_path
+        );
         return Ok((0, 0));
     }
 
     let mut total_pokemon = 0usize;
-    let mut total_joueurs = 0usize;
+    let mut total_players = 0usize;
 
     for (file_key, bytes) in dat_files {
         let uuid = file_key;
 
-        // Gestion propre de la décompression GZIP
+        // Proper GZIP decompression handling
         let decompressed_bytes = if is_gzipped(&bytes) {
             match decompress_gzip(&bytes) {
                 Ok(data) => data,
@@ -60,37 +64,48 @@ pub async fn fetch_cobblemon_player_pokemons(
             Ok(NbtValue::Compound(compound)) => {
                 let mut team: Vec<Pokemon> = Vec::new();
 
-                // On itère tant qu'on trouve des slots (Slot0, Slot1, etc.)
+                // Iterate while Slot0, Slot1, Slot2... exist
                 for i in 0.. {
                     let slot_key = format!("Slot{}", i);
-                    
+
                     if let Some(NbtValue::Compound(poke_nbt)) = compound.get(&slot_key) {
-                        // --- PARSING SIMPLIFIÉ GRÂCE AUX HELPERS ---
-                        let species = get_string(poke_nbt, "Species").unwrap_or_else(|| "unknown".to_string());
+
+                        // --- Simplified parsing using helper functions ---
+                        let species = get_string(poke_nbt, "Species")
+                            .unwrap_or_else(|| "unknown".to_string());
                         let form = get_string(poke_nbt, "FormId");
                         let gender = get_string(poke_nbt, "Gender");
                         let nickname = get_string(poke_nbt, "Nickname");
                         let level = get_int(poke_nbt, "Level");
                         let shiny = get_bool(poke_nbt, "Shiny");
-                        
-                        // Gestion des UUIDs (parfois appelés UUID, parfois PokemonUUID)
-                        let pokemon_uuid = get_uuid(poke_nbt, "PokemonUUID").or_else(|| get_uuid(poke_nbt, "UUID"));
+
+                        // UUID fields may have different names depending on context
+                        let pokemon_uuid = get_uuid(poke_nbt, "PokemonUUID")
+                            .or_else(|| get_uuid(poke_nbt, "UUID"));
                         let do_uuid = get_uuid(poke_nbt, "PokemonOriginalTrainer");
 
                         team.push(Pokemon {
-                            species, form, gender, nickname, level, shiny, do_uuid, pokemon_uuid
+                            species,
+                            form,
+                            gender,
+                            nickname,
+                            level,
+                            shiny,
+                            do_uuid,
+                            pokemon_uuid,
                         });
                     } else {
-                        break; // Fin de l'équipe
+                        break; // Stop when no more slots are found
                     }
                 }
 
                 if !team.is_empty() {
                     total_pokemon += team.len();
-                    total_joueurs += 1;
+                    total_players += 1;
 
-                    // Préparation des données pour la BDD (Array fixe de 6 tuples)
-                    let mut pkmn_data = [(None, None, None, None, None, None, None, None); 6];
+                    // Prepare fixed-size array (max team size = 6)
+                    let mut pkmn_data =
+                        [(None, None, None, None, None, None, None, None); 6];
 
                     for (i, poke) in team.iter().enumerate().take(6) {
                         pkmn_data[i] = (
@@ -105,7 +120,9 @@ pub async fn fetch_cobblemon_player_pokemons(
                         );
                     }
 
-                    if let Err(e) = db.insert_joueur_pokemon(server_id, &uuid, &pkmn_data) {
+                    if let Err(e) =
+                        db.insert_joueur_pokemon(server_id, &uuid, &pkmn_data)
+                    {
                         warn!("Database insertion error for {}: {:?}", uuid, e);
                     }
                 }
@@ -115,40 +132,51 @@ pub async fn fetch_cobblemon_player_pokemons(
         }
     }
 
-    Ok((total_pokemon, total_joueurs))
+    Ok((total_pokemon, total_players))
 }
 
-// --- FONCTIONS UTILITAIRES (Helpers) ---
+// TODO : Move these helper methods in helper crate
 
+/// Checks if the byte slice starts with a GZIP header
 fn is_gzipped(bytes: &[u8]) -> bool {
     bytes.len() >= 2 && bytes[0] == 0x1f && bytes[1] == 0x8b
 }
 
+/// Decompresses GZIP-compressed data into a Vec<u8>
 fn decompress_gzip(bytes: &[u8]) -> std::io::Result<Vec<u8>> {
     let mut gz = GzDecoder::new(bytes);
-    let mut decomp = Vec::new();
-    gz.read_to_end(&mut decomp)?;
-    Ok(decomp)
+    let mut decompressed = Vec::new();
+    gz.read_to_end(&mut decompressed)?;
+    Ok(decompressed)
 }
 
-// Récupère une String depuis le NBT
-fn get_string(nbt: &fastnbt::Compound, key: &str) -> Option<String> {
+/// Extracts a String from an NBT compound
+fn get_string(
+    nbt: &HashMap<String, NbtValue>,
+    key: &str,
+) -> Option<String> {
     match nbt.get(key) {
         Some(NbtValue::String(s)) => Some(s.clone()),
         _ => None,
     }
 }
 
-// Récupère un Int (i32) depuis le NBT
-fn get_int(nbt: &fastnbt::Compound, key: &str) -> Option<i32> {
+/// Extracts an i32 from an NBT compound
+fn get_int(
+    nbt: &HashMap<String, NbtValue>,
+    key: &str,
+) -> Option<i32> {
     match nbt.get(key) {
         Some(NbtValue::Int(i)) => Some(*i),
         _ => None,
     }
 }
 
-// Récupère un Booléen (souvent stocké en Byte ou Int dans le NBT Minecraft)
-fn get_bool(nbt: &fastnbt::Compound, key: &str) -> Option<bool> {
+/// Extracts a boolean value (commonly stored as Byte or Int in Minecraft NBT)
+fn get_bool(
+    nbt: &HashMap<String, NbtValue>,
+    key: &str,
+) -> Option<bool> {
     match nbt.get(key) {
         Some(NbtValue::Byte(b)) => Some(*b != 0),
         Some(NbtValue::Int(i)) => Some(*i != 0),
@@ -156,19 +184,23 @@ fn get_bool(nbt: &fastnbt::Compound, key: &str) -> Option<bool> {
     }
 }
 
-// Récupère un UUID (String ou IntArray[4])
-fn get_uuid(nbt: &fastnbt::Compound, key: &str) -> Option<String> {
+/// Extracts a UUID from either a String or an IntArray[4]
+fn get_uuid(
+    nbt: &HashMap<String, NbtValue>,
+    key: &str,
+) -> Option<String> {
     match nbt.get(key) {
         Some(NbtValue::String(s)) => Some(s.clone()),
         Some(NbtValue::IntArray(arr)) if arr.len() == 4 => {
-            // Conversion standard Minecraft IntArray -> UUID String
+            // Standard Minecraft IntArray[4] -> UUID conversion
             Some(format!(
                 "{:08x}-{:04x}-{:04x}-{:04x}-{:012x}",
                 arr[0] as u32,
                 (arr[1] >> 16) & 0xFFFF,
                 arr[1] & 0xFFFF,
                 (arr[2] >> 16) & 0xFFFF,
-                (((arr[2] & 0xFFFF) as u64) << 32) | ((arr[3] as u32) as u64)
+                (((arr[2] & 0xFFFF) as u64) << 32)
+                    | ((arr[3] as u32) as u64)
             ))
         }
         _ => None,
