@@ -12,6 +12,10 @@ pub struct Config {
     pub mineotter_bot_webhook_url: String,
     pub multiloutre_bot_webhook_activated: String,
     pub multiloutre_bot_webhook_url: String,
+    pub mcmyadmin_webhook_activated: String,
+    pub mcmyadmin_webhook_url: String,
+    pub mcmyadmin_secondary_webhook_activated: String,
+    pub mcmyadmin_secondary_webhook_url: String,
 }
 
 impl Config {

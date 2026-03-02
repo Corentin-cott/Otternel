@@ -12,6 +12,8 @@ use serde::Deserialize;
 use notify::{
     Config as NotifyConfig, Event, Error as NotifyError, RecommendedWatcher, RecursiveMode, Watcher,
 };
+
+use crate::helper::webhook_discord;
 use crate::serverlog;
 
 /// Decodes a sequence of bytes into a `String`, attempting to interpret the input as UTF-8 or UTF-16 with a fallback mechanism.
@@ -246,6 +248,9 @@ fn read_new(path: &PathBuf, positions: &mut HashMap<PathBuf, u64>, compiled_trig
             // Debug: print only the last line for visibility
             debug!("{} (last line)", path.display().to_string().green().bold());
             debug!("{}", line.to_string().bright_blue().italic());
+
+            // Send line to mcmyadmin
+            let _ = webhook_discord::send_discord_message(webhook_discord::get_webhook_mcmyadmin_by_server_id(serverlog_id), line);
 
             // Match triggers only against the last (complete) line
             for (re, func, ids_opt) in compiled_triggers {
