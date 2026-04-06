@@ -112,6 +112,50 @@ fn on_player_connection_update(line: &str, serverlog_id: u32, co_type: &str) {
     ) {
         error!("{e}");
     }
+
+    // Broadcast connection/disconnection to other servers
+    let playername = playername.to_string();
+    let server_nom = server.nom.clone();
+    let co_type = co_type.to_string();
+    let origin_id = serverlog_id as u64;
+
+    tokio::spawn(async move {
+        let rcon = match helper::rcon_helper::RconHelper::new() {
+            Ok(r) => r,
+            Err(e) => {
+                error!("Failed to init RconHelper for cross-server broadcast: {}", e);
+                return;
+            }
+        };
+
+        let servers = match rcon.db.get_all_active_global_servers() {
+            Ok(s) => s,
+            Err(e) => {
+                error!("Failed to fetch active global servers: {}", e);
+                return;
+            }
+        };
+
+        let command = format!(
+            r#"tellraw @a [{{"text":"{} a {} {} !","color":"yellow"}}]"#,
+            playername,
+            co_type,
+            server_nom
+        );
+
+        for target_server in servers.into_iter().filter(|s| s.active_id != origin_id) {
+            match rcon.execute_command(target_server.active_id, &command).await {
+                Ok(_) => debug!(
+                    "Cross-server connection update relayed to server id={}",
+                    target_server.active_id
+                ),
+                Err(e) => warn!(
+                    "Failed to relay connection update to server id={}: {}",
+                    target_server.active_id, e
+                ),
+            }
+        }
+    });
 }
 
 fn on_player_message(line: &str, serverlog_id: u32) {
@@ -123,6 +167,7 @@ fn on_player_message(line: &str, serverlog_id: u32) {
 
     let playername = caps.get(1).unwrap().as_str();
     let message = caps.get(2).unwrap().as_str();
+    let embed_color = server.embed_color.clone().unwrap_or_else(|| "white".to_string());
 
     // Send Discord embed with the player's message
     if let Err(e) = helper::webhook_discord::send_discord_embed(
@@ -144,7 +189,6 @@ fn on_player_message(line: &str, serverlog_id: u32) {
     // Send the message to the players in other servers (except the one it comes from)
     let playername = playername.to_string();
     let message = message.to_string();
-    let origin_server_nom = server.nom.clone();
     let origin_id = serverlog_id as u64;
 
     tokio::spawn(async move {
@@ -165,8 +209,10 @@ fn on_player_message(line: &str, serverlog_id: u32) {
         };
 
         let command = format!(
-            r#"tellraw @a {{"text":"[{}] <{}> {}","color":"white"}}"#,
-            origin_server_nom, playername, message
+            r#"tellraw @a [{{"text":"<"}},{{"text":"{}","color":"{}"}},{{"text":"> {}","color":"white"}}]"#,
+            playername,
+            embed_color,
+            message
         );
 
         for target_server in servers.into_iter().filter(|s| s.active_id != origin_id) {
