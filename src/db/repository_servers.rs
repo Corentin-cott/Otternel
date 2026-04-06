@@ -1,5 +1,6 @@
 use mysql::{params, prelude::Queryable};
 use crate::db::models::{Serveur};
+use crate::db::models::{ServeurActifGlobal};
 use crate::db::models::{RconParams};
 
 use super::repository_default::Database;
@@ -47,6 +48,35 @@ impl Database {
     // ===========================
     // serveurs_actif
     // ===========================
+
+    /// Fetch all active and global servers from the database.
+    ///
+    /// This function retrieves all servers where `actif = true` AND `global = true`,
+    /// returning only the fields required for active global server display.
+    ///
+    /// # Returns
+    ///
+    /// `Result<Vec<ServeurActifGlobal>, mysql::Error>` - A list of matching servers.
+    pub fn get_all_active_global_servers(&self) -> Result<Vec<ServeurActifGlobal>, mysql::Error> {
+        let mut conn = self.get_conn()?;
+        let result: Vec<ServeurActifGlobal> = conn.exec_map(
+            r#"SELECT sa.id as active_id, s.nom, s.jeu, s.version, s.embed_color, s.contenaire, s.type
+                FROM serveurs s
+                INNER JOIN serveurs_actifs sa ON sa.serveurs_id = s.id
+                WHERE s.actif = true AND s.global = true"#,
+            (),
+            |mut row: mysql::Row| ServeurActifGlobal {
+                active_id: row.take("active_id").unwrap(),
+                nom: row.take("nom").unwrap(),
+                jeu: row.take("jeu").unwrap(),
+                version: row.take("version").unwrap(),
+                embed_color: row.take("embed_color"),
+                contenaire: row.take("contenaire"),
+                r#type: row.take("type"),
+            },
+        )?;
+        Ok(result)
+    }
 
     /// Fetch a `Serveur` using an active server (serveurs_actifs) id.
     /// Fetch a `Serveur` using an active server ID from the `serveurs_actifs` table.

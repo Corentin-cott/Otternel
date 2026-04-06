@@ -17,14 +17,17 @@ pub enum RconHelperError {
     ServerNotFound(u64),
 
     #[error("RCON error: {0}")]
-        RconError(#[from] rcon::Error),
+    RconError(#[from] rcon::Error),
 
     #[error("Failed to initialize database connection")]
     DbInitError,
+
+    #[error("Failed to resolve address: {0}")]
+    DnsResolutionFailed(String),
 }
 
 pub struct RconHelper {
-    db: Database,
+    pub db: Database,
 }
 
 impl RconHelper {
@@ -47,23 +50,49 @@ impl RconHelper {
         active_server_id: u64,
         command: &str,
     ) -> Result<String, RconHelperError> {
-        // Fetch RCON parameters from the database
         let rcon_params = self
             .db
             .get_rcon_params_by_id(active_server_id)?
             .ok_or(RconHelperError::ServerNotFound(active_server_id))?;
 
-        // Establish a connection to the RCON server
         let addr = format!("{}:{}", rcon_params.host, rcon_params.port);
-        let resolved_addr = addr.to_socket_addrs().unwrap().next().unwrap();
-        
+
+        let resolved_addr = addr
+            .to_socket_addrs()
+            .map_err(|e| RconHelperError::RconError(rcon::Error::from(e)))?
+            .next()
+            .ok_or_else(|| RconHelperError::DnsResolutionFailed(addr.clone()))?;
+
         let mut conn = Connection::builder()
             .connect(resolved_addr, &rcon_params.password)
             .await?;
 
-        // Send the command and return the response
         let response = conn.cmd(command).await?;
-
         Ok(response)
+    }
+
+    /// Sends a command to every active & global server.
+    ///
+    /// # Arguments
+    /// * `command` - The command string to execute on all servers.
+    ///
+    /// # Returns
+    /// A `Vec` of tuples `(active_id, Result<String, RconHelperError>)` — one entry per server,
+    /// allowing partial failures without interrupting the whole broadcast.
+    pub async fn broadcast_command_to_active_global_servers(
+        &self,
+        command: &str,
+    ) -> Vec<(u64, Result<String, RconHelperError>)> {
+        let servers = match self.db.get_all_active_global_servers() {
+            Ok(s) => s,
+            Err(e) => return vec![(0, Err(RconHelperError::DatabaseError(e)))],
+        };
+
+        let mut results = Vec::new();
+        for server in servers {
+            let outcome = self.execute_command(server.active_id, command).await;
+            results.push((server.active_id, outcome));
+        }
+        results
     }
 } 

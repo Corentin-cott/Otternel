@@ -28,6 +28,17 @@ pub struct Serveur {
 }
 
 #[derive(Debug)]
+pub struct ServeurActifGlobal {
+    pub active_id: u64,
+    pub nom: String,
+    pub jeu: String,
+    pub version: String,
+    pub embed_color: Option<String>,
+    pub contenaire: Option<String>,
+    pub r#type: Option<String>,
+}
+
+#[derive(Debug)]
 pub struct RconParams {
     pub host: String,
     pub port: String,

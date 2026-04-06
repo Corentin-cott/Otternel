@@ -116,7 +116,7 @@ fn on_player_connection_update(line: &str, serverlog_id: u32, co_type: &str) {
 
 fn on_player_message(line: &str, serverlog_id: u32) {
     // Resolve active server at serverlog_id
-    let server:Serveur = get_server_by_active_server_id(serverlog_id);
+    let server: Serveur = get_server_by_active_server_id(serverlog_id);
 
     let re = regex::Regex::new(r"<([^>]+)>\s(.+)").unwrap();
     let caps = re.captures(line).unwrap();
@@ -136,11 +136,52 @@ fn on_player_message(line: &str, serverlog_id: u32) {
         " ",
         " ",
         &format!("Message de {}", server.nom),
-        Some(chrono::Utc::now()
-            .to_rfc3339())
+        Some(chrono::Utc::now().to_rfc3339()),
     ) {
         error!("{e}");
     }
+
+    // Send the message to the players in other servers (except the one it comes from)
+    let playername = playername.to_string();
+    let message = message.to_string();
+    let origin_server_nom = server.nom.clone();
+    let origin_id = serverlog_id as u64;
+
+    tokio::spawn(async move {
+        let rcon = match helper::rcon_helper::RconHelper::new() {
+            Ok(r) => r,
+            Err(e) => {
+                error!("Failed to init RconHelper for cross-server broadcast: {}", e);
+                return;
+            }
+        };
+
+        let servers = match rcon.db.get_all_active_global_servers() {
+            Ok(s) => s,
+            Err(e) => {
+                error!("Failed to fetch active global servers: {}", e);
+                return;
+            }
+        };
+
+        let command = format!(
+            r#"tellraw @a {{"text":"[{}] <{}> {}","color":"white"}}"#,
+            origin_server_nom, playername, message
+        );
+
+        for target_server in servers.into_iter().filter(|s| s.active_id != origin_id) {
+            match rcon.execute_command(target_server.active_id, &command).await {
+                Ok(_) => debug!(
+                    "Cross-server message relayed to server id={}",
+                    target_server.active_id
+                ),
+                Err(e) => warn!(
+                    "Failed to relay message to server id={}: {}",
+                    target_server.active_id, e
+                ),
+            }
+        }
+    });
 }
 
 fn on_minecraft_player_advancement(line: &str, serverlog_id: u32) {
