@@ -55,10 +55,16 @@ pub fn handle_unlinked_player_join(db: &Database, player_id: u64, playername: &s
 
     // Checks if the generation of a code is necessary
     let is_linked = db.is_account_linked_to_user(player_id)?;
-    if is_linked { return Ok(()); }
+    if is_linked {
+        info!("Player '{}' is linked, no code generation needed.", playername);
+        return Ok(());
+    }
 
     let is_code_active = db.is_linking_code_active_for_player_id(player_id)?;
-    if is_code_active { return Ok(()); }
+    if is_code_active {
+        info!("Player '{}' already has a active code, no new one generated.", playername);
+        return Ok(());
+    }
 
     // Get expiration time from env, default to 10 minutes if not set or malformed
     let code_duration_minutes: u32 = std::env::var("LINKING_CODE_EXPIRATION_MIN") 
