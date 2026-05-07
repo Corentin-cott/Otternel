@@ -93,7 +93,7 @@ pub fn handle_unlinked_player_join(db: &Database, player_id: u64, playername: &s
     tokio::spawn(async move {
         debug!("Sending RCON command to server ID {}", serverlog_id);
         if let Err(e) = rcon_helper.execute_command(serverlog_id as u64, &command_to_run).await {
-            error!("Failed to execute RCON command: {}", e);
+            error!("Failed to execute RCON command to inform player linking code: {}", e);
         }
     });
     
