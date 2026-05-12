@@ -1,0 +1,17 @@
+services:
+  otternel:
+    build: .
+    container_name: otternel
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - SERVERLOG_FOLDER=/serverlog
+    volumes:
+      # TODO : REPLACE WITH A PROXY TO AVOID GIVING DOCKER ACCESS TO THE HOST FILE SYSTEM ASAP
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Server logs
+      - /opt/docker/minecraft/la_vanilla_s4/data/logs:/serverlog/la_vanilla_s4:ro
+      - /opt/docker/palworld/palworld_vanilla/data/Pal/Saved/Logs:/serverlog/palworld_vanilla:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
