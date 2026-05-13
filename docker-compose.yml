@@ -15,3 +15,9 @@ services:
       - /opt/docker/palworld/palworld_vanilla/data/Pal/Saved/Logs:/serverlog/palworld_vanilla:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    networks:
+      - otternel-net
+
+networks:
+  otternel-net:
+    external: true
