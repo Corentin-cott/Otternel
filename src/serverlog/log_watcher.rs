@@ -132,7 +132,7 @@ pub fn watch_serverlogs(folder: &str) -> Result<(), NotifyError> {
     }, NotifyConfig::default())?;
 
     // Watch the folder for changes
-    watcher.watch(&folder, RecursiveMode::NonRecursive)?;
+    watcher.watch(&folder, RecursiveMode::Recursive)?;
 
     // Loop forever, reading new content of log files as they are appended
     info!("Watching folder {} for .log changes with {} triggers", folder.display().to_string().green().bold(), compiled_triggers.len().to_string().green().bold());
@@ -228,7 +228,8 @@ fn read_new(path: &PathBuf, positions: &mut HashMap<PathBuf, u64>, compiled_trig
     if !buf.is_empty() {
         // Get serverlog_id from file name once
         let serverlog_id = path
-            .file_stem()
+            .parent()
+            .and_then(|p| p.file_name())
             .and_then(|s| s.to_str())
             .and_then(|s| s.parse::<u32>().ok());
 
