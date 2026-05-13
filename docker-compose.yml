@@ -1,7 +1,7 @@
 services:
   otternel:
     build: .
-    container_name: otternel
+    container_name: service-otternel
     restart: unless-stopped
     env_file:
       - .env
