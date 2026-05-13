@@ -16,8 +16,9 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
-      - otternel-net
+      - mysql_network
 
 networks:
-  otternel-net:
+  mysql_network:
     external: true
+    name: mysql_network
