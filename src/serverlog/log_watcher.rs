@@ -205,6 +205,12 @@ pub fn watch_serverlogs(folder: &str) -> Result<(), NotifyError> {
                         continue;
                     }
 
+                    // Skip debug.log: Forge mirrors every line into it, which
+                    // would process each message twice (once per file).
+                    if path.file_name().and_then(|s| s.to_str()) == Some("debug.log") {
+                        continue;
+                    }
+
                     use notify::event::EventKind;
 
                     match &event.kind {
