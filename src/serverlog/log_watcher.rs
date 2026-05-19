@@ -57,11 +57,44 @@ fn decode_log_bytes(bytes: &[u8]) -> String {
     String::from_utf16(&code_units).unwrap_or_else(|_| String::from_utf8_lossy(bytes).to_string())
 }
 
+/// Returns `true` for invisible Unicode formatting characters that Forge/mods
+/// can inject into log lines. These are NOT caught by `char::is_control()`
+/// (they belong to Unicode category Cf, not Cc), so they must be listed here.
+fn is_invisible_format(c: char) -> bool {
+    matches!(c,
+        '\u{00AD}'                  // soft hyphen
+        | '\u{180E}'                // Mongolian vowel separator
+        | '\u{200B}'..='\u{200F}'   // zero-width space/joiner, LRM/RLM
+        | '\u{202A}'..='\u{202E}'   // bidi embedding/override
+        | '\u{2060}'..='\u{2064}'   // word joiner, invisible operators
+        | '\u{2066}'..='\u{206F}'   // bidi isolates, deprecated format chars
+        | '\u{FEFF}'                // zero-width no-break space / BOM
+        | '\u{FFF9}'..='\u{FFFB}'   // interlinear annotation
+    )
+}
+
+/// Builds a diagnostic string listing every non-ASCII codepoint left in a line
+/// after sanitizing, in the form `'x'=U+00XX`. Returns `None` if the line is
+/// pure ASCII. Useful to identify hidden characters injected by Forge/mods.
+fn dump_non_ascii(line: &str) -> Option<String> {
+    let parts: Vec<String> = line
+        .chars()
+        .filter(|c| !c.is_ascii())
+        .map(|c| format!("{:?}=U+{:04X}", c, c as u32))
+        .collect();
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(" "))
+    }
+}
+
 /// Removes special characters from a decoded log string.
 ///
 /// Strips ANSI escape sequences (terminal color codes), Minecraft `§` color
-/// codes, and other non-printable control characters, while keeping newlines
-/// and tabs intact so line splitting downstream still works.
+/// codes, non-printable control characters, and invisible Unicode formatting
+/// characters injected by Forge/mods. Newlines and tabs are kept so line
+/// splitting downstream still works.
 fn sanitize_log(input: &str) -> String {
     let ansi = Regex::new(r"\x1b\[[0-9;]*[A-Za-z]").unwrap();
     let without_ansi = ansi.replace_all(input, "");
@@ -75,8 +108,10 @@ fn sanitize_log(input: &str) -> String {
                 chars.next();
             }
             '\n' | '\r' | '\t' => out.push(c),
-            // Drop other control characters (incl. NUL padding from UTF-16)
+            // Drop control characters (incl. NUL padding from UTF-16)
             c if c.is_control() => {}
+            // Drop invisible Unicode formatting characters (Cf category)
+            c if is_invisible_format(c) => {}
             c => out.push(c),
         }
     }
@@ -279,6 +314,12 @@ fn read_new(path: &PathBuf, positions: &mut HashMap<PathBuf, u64>, compiled_trig
             // Debug: print only the last line for visibility
             debug!("{} (last line)", path.display().to_string().green().bold());
             debug!("{}", cleaned_line.to_string().bright_blue().italic());
+
+            // Diagnostic: list any non-ASCII codepoint still present so hidden
+            // characters injected by Forge/mods can be identified.
+            if let Some(dump) = dump_non_ascii(cleaned_line) {
+                debug!("non-ASCII codepoints in last line: {}", dump.yellow());
+            }
 
             // Send line to mcmyadmin
             let _ = webhook_discord::send_discord_message(webhook_discord::get_webhook_mcmyadmin_by_server_id(serverlog_id), line);
