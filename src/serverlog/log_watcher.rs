@@ -57,6 +57,32 @@ fn decode_log_bytes(bytes: &[u8]) -> String {
     String::from_utf16(&code_units).unwrap_or_else(|_| String::from_utf8_lossy(bytes).to_string())
 }
 
+/// Removes special characters from a decoded log string.
+///
+/// Strips ANSI escape sequences (terminal color codes), Minecraft `§` color
+/// codes, and other non-printable control characters, while keeping newlines
+/// and tabs intact so line splitting downstream still works.
+fn sanitize_log(input: &str) -> String {
+    let ansi = Regex::new(r"\x1b\[[0-9;]*[A-Za-z]").unwrap();
+    let without_ansi = ansi.replace_all(input, "");
+
+    let mut out = String::with_capacity(without_ansi.len());
+    let mut chars = without_ansi.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            // Minecraft color code: section sign followed by one code char
+            '\u{00A7}' => {
+                chars.next();
+            }
+            '\n' | '\r' | '\t' => out.push(c),
+            // Drop other control characters (incl. NUL padding from UTF-16)
+            c if c.is_control() => {}
+            c => out.push(c),
+        }
+    }
+    out
+}
+
 /// This function monitors a folder for `.log` files using file system notifications.
 /// It prints the content of newly created or modified `.log` files and tracks the last
 /// read position in the file to ensure only new additions are read subsequently. Deleted
@@ -222,7 +248,7 @@ fn read_new(path: &PathBuf, positions: &mut HashMap<PathBuf, u64>, compiled_trig
     // Read the new content (bytes)
     let mut bytes = Vec::new();
     f.read_to_end(&mut bytes)?;
-    let buf = decode_log_bytes(&bytes);
+    let buf = sanitize_log(&decode_log_bytes(&bytes));
 
     // Only proceed if there is any new text
     if !buf.is_empty() {
