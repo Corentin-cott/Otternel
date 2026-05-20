@@ -7,7 +7,7 @@ mod playerstats;
 use tokio::task;
 use futures::future;
 use colored::Colorize;
-use log::{info, error};
+use log::{info, error, warn};
 use std::time::Duration;
 
 /**
