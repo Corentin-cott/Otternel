@@ -5,41 +5,25 @@ use colored::Colorize;
 use log::{debug, error, info, trace, warn};
 use crate::helper;
 
-/// Récupère les stats des joueurs Minecraft dans un monde donné
+/// Récupère les stats des joueurs Minecraft depuis le stockage local
 /// # Parameters
-/// - `server_id`: l'id du serveur
-/// - `container_name`: conteneur docker qui héberge le serveur MC (Optionnel si local)
-/// - `world_name`: nom du monde (ex: "world", "netherhub") (Optionnel si local)
+/// - `server_id`: l'id du serveur (correspond au nom du dossier dans /stats/)
 ///
 pub async fn fetch_mc_player_stats(
     server_id: u64,
-    container_name: Option<&str>,
-    world_name: Option<&str>,
 ) -> anyhow::Result<HashMap<String, Value>> {
     let local_path = format!("/stats/{}/", server_id);
 
     if std::path::Path::new(&local_path).exists() {
-        debug!("Local path exists for server {}: {}", server_id, local_path);
         return fetch_local_json_files(&local_path).await;
     }
 
-    // Fallback to Docker
-    let container = container_name.ok_or_else(|| anyhow::anyhow!("Container name missing for Docker fetch (Server ID: {})", server_id))?;
-    let world = world_name.ok_or_else(|| anyhow::anyhow!("World name missing for Docker fetch (Server ID: {})", server_id))?;
-
-    let fetcher = DockerFetcher::new();
-
-    // Path to stats folder
-    let remote_path = format!("/server/{}/stats", world);
-
-    let stats = fetcher.fetch_json_files(container, &remote_path).await?;
-    Ok(stats)
+    anyhow::bail!("Aucun dossier local pour ce serveur (Path: {})", local_path)
 }
 
 async fn fetch_local_json_files(path: &str) -> anyhow::Result<HashMap<String, Value>> {
     let mut result = HashMap::new();
     let mut entries = tokio::fs::read_dir(path).await?;
-    let mut count = 0;
 
     while let Some(entry) = entries.next_entry().await? {
         let path = entry.path();
@@ -49,13 +33,11 @@ async fn fetch_local_json_files(path: &str) -> anyhow::Result<HashMap<String, Va
             if let Ok(json) = serde_json::from_str::<Value>(&contents) {
                 if let Some(uuid) = path.file_stem().and_then(|s| s.to_str()) {
                     result.insert(uuid.to_string(), json);
-                    count += 1;
                 }
             }
         }
     }
 
-    debug!("Found {} JSON stats files in {}", count, path);
     Ok(result)
 }
 
@@ -83,61 +65,14 @@ pub async fn sync_mc_stats_to_db() -> anyhow::Result<()> {
         "players :".blue().bold()
     );
 
-    // Track which servers have already been processed via local discovery
-    let mut processed_server_ids = std::collections::HashSet::new();
-
-    // 1. Discovery via local /stats/ folder
-    info!("Scanning /stats/ directory for server folders...");
-    if let Ok(mut entries) = tokio::fs::read_dir("/stats/").await {
-        while let Some(entry) = entries.next_entry().await? {
-            let path = entry.path();
-            if path.is_dir() {
-                if let Some(folder_name) = path.file_name().and_then(|s| s.to_str()) {
-                    if let Ok(server_id) = folder_name.parse::<u64>() {
-                        // Find the server in our list
-                        if let Some(server) = minecraft_servers.iter().find(|s| s.id == server_id) {
-                            info!("{} {} (ID: {})", "Discovered local stats for".blue(), server.nom.green().bold(), server_id);
-                            
-                            let container = server.contenaire.as_deref();
-                            let world_name = server.nom_monde.as_deref();
-                            
-                            match fetch_mc_player_stats(server_id, container, world_name).await {
-                                Ok(stats_map) => {
-                                    info!("Fetched {} stats for discovered server {}", stats_map.len(), server.nom);
-                                    process_and_save_stats(&db, server, stats_map).await?;
-                                    processed_server_ids.insert(server_id);
-                                },
-                                Err(e) => warn!("Failed to fetch stats for discovered server {}: {}", server.nom, e),
-                            }
-                        } else {
-                            debug!("Found folder /stats/{} but no matching server ID found in database", server_id);
-                        }
-                    } else {
-                        debug!("Found folder /stats/{} but name is not a valid server ID", folder_name);
-                    }
-                }
-            }
-        }
-    } else {
-        warn!("Could not read /stats/ directory. Check if it exists and has correct permissions.");
-    }
-
-    // 2. Fallback for remaining servers (via Docker Fetcher)
     for server in minecraft_servers {
-        if processed_server_ids.contains(&server.id) {
-            continue;
-        }
+        info!("{} {} (ID: {})","Stating playerstats fetch for:".to_string().blue(), server.nom.green().bold(), server.id );
 
-        info!("{} {} (ID: {})","Attempting fallback fetch for:".to_string().blue(), server.nom.green().bold(), server.id );
-
-        // Fetch Minecraft stats from server files
-        let container = server.contenaire.as_deref();
-        let world_name = server.nom_monde.as_deref();
-
-        let stats_map: HashMap<String, Value> = match fetch_mc_player_stats(server.id, container, world_name).await {
+        // Fetch Minecraft stats ONLY from local storage
+        let stats_map: HashMap<String, Value> = match fetch_mc_player_stats(server.id).await {
             Ok(map) => map,
-            Err(e) => {
-                debug!("Fallback fetch skipped for {}: {} (Normal if Docker/World not configured)", server.nom, e);
+            Err(_) => {
+                info!("{} pour le serveur {}", "Aucun dossier local".yellow(), server.nom.yellow().bold());
                 continue;
             }
         };
@@ -155,6 +90,7 @@ async fn process_and_save_stats(db: &crate::db::repository_default::Database, se
     let mut total_cobblemon_pokemon = 0;
     let mut total_cobblemon_trainer = 0;
 
+    // Cobblemon still uses Docker Fetcher for now as it's a different logic
     if let (Some(c), Some(w)) = (container, world_name) {
         match cobblemon_stats::fetch_cobblemon_stats(server.id, c, w).await {
             Ok((pokemon, trainers)) => {
