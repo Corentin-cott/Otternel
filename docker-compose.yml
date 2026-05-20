@@ -16,8 +16,8 @@ services:
       - /opt/docker/palworld/palworld_vanilla/data/Pal/Saved/Logs:/serverlog/3:ro
       # Read only server stats
       - /opt/docker/minecraft/isle_of_berk/data/world/stats:/stats/27/:ro
-      - /opt/docker/minecraft/la_vanilla_s4/data/world/stats:/stats/1/:ro
-      - /opt/docker/minecraft/ottergames/data/world/stats:/stats/26/:ro
+      - /opt/docker/minecraft/la_vanilla_s4/data/world/players/stats:/stats/1/:ro
+      - /opt/docker/minecraft/ottergames/data/ottergames/players/stats:/stats/26/:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
