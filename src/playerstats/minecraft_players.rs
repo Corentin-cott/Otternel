@@ -19,6 +19,7 @@ pub async fn fetch_mc_player_stats(
     let local_path = format!("/stats/{}/", server_id);
 
     if std::path::Path::new(&local_path).exists() {
+        debug!("Local path exists for server {}: {}", server_id, local_path);
         return fetch_local_json_files(&local_path).await;
     }
 
@@ -38,6 +39,7 @@ pub async fn fetch_mc_player_stats(
 async fn fetch_local_json_files(path: &str) -> anyhow::Result<HashMap<String, Value>> {
     let mut result = HashMap::new();
     let mut entries = tokio::fs::read_dir(path).await?;
+    let mut count = 0;
 
     while let Some(entry) = entries.next_entry().await? {
         let path = entry.path();
@@ -47,11 +49,13 @@ async fn fetch_local_json_files(path: &str) -> anyhow::Result<HashMap<String, Va
             if let Ok(json) = serde_json::from_str::<Value>(&contents) {
                 if let Some(uuid) = path.file_stem().and_then(|s| s.to_str()) {
                     result.insert(uuid.to_string(), json);
+                    count += 1;
                 }
             }
         }
     }
 
+    debug!("Found {} JSON stats files in {}", count, path);
     Ok(result)
 }
 
@@ -83,6 +87,7 @@ pub async fn sync_mc_stats_to_db() -> anyhow::Result<()> {
     let mut processed_server_ids = std::collections::HashSet::new();
 
     // 1. Discovery via local /stats/ folder
+    info!("Scanning /stats/ directory for server folders...");
     if let Ok(mut entries) = tokio::fs::read_dir("/stats/").await {
         while let Some(entry) = entries.next_entry().await? {
             let path = entry.path();
@@ -96,15 +101,25 @@ pub async fn sync_mc_stats_to_db() -> anyhow::Result<()> {
                             let container = server.contenaire.as_deref();
                             let world_name = server.nom_monde.as_deref();
                             
-                            if let Ok(stats_map) = fetch_mc_player_stats(server_id, container, world_name).await {
-                                process_and_save_stats(&db, server, stats_map).await?;
-                                processed_server_ids.insert(server_id);
+                            match fetch_mc_player_stats(server_id, container, world_name).await {
+                                Ok(stats_map) => {
+                                    info!("Fetched {} stats for discovered server {}", stats_map.len(), server.nom);
+                                    process_and_save_stats(&db, server, stats_map).await?;
+                                    processed_server_ids.insert(server_id);
+                                },
+                                Err(e) => warn!("Failed to fetch stats for discovered server {}: {}", server.nom, e),
                             }
+                        } else {
+                            debug!("Found folder /stats/{} but no matching server ID found in database", server_id);
                         }
+                    } else {
+                        debug!("Found folder /stats/{} but name is not a valid server ID", folder_name);
                     }
                 }
             }
         }
+    } else {
+        warn!("Could not read /stats/ directory. Check if it exists and has correct permissions.");
     }
 
     // 2. Fallback for remaining servers (via Docker Fetcher)
@@ -113,7 +128,7 @@ pub async fn sync_mc_stats_to_db() -> anyhow::Result<()> {
             continue;
         }
 
-        info!("{} {} (ID: {})","Stating Docker stats fetch for:".to_string().blue(), server.nom.green().bold(), server.id );
+        info!("{} {} (ID: {})","Attempting fallback fetch for:".to_string().blue(), server.nom.green().bold(), server.id );
 
         // Fetch Minecraft stats from server files
         let container = server.contenaire.as_deref();
@@ -122,7 +137,7 @@ pub async fn sync_mc_stats_to_db() -> anyhow::Result<()> {
         let stats_map: HashMap<String, Value> = match fetch_mc_player_stats(server.id, container, world_name).await {
             Ok(map) => map,
             Err(e) => {
-                warn!("Failed to fetch stats for server {}: {}", server.nom.yellow().bold(), e.to_string().yellow().bold());
+                debug!("Fallback fetch skipped for {}: {} (Normal if Docker/World not configured)", server.nom, e);
                 continue;
             }
         };
@@ -290,18 +305,15 @@ fn extract_player_stats(json: &Value) -> (
 
     let nb_mort = custom
         .get("minecraft:deaths")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0) as i32;
+        .and_then(|v| v.as_i64()).unwrap_or(0) as i32;
 
     let nb_kills = custom
         .get("minecraft:mob_kills")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0) as i32;
+        .and_then(|v| v.as_i64()).unwrap_or(0) as i32;
 
     let nb_playerkill = custom
         .get("minecraft:player_kills")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0) as i32;
+        .and_then(|v| v.as_i64()).unwrap_or(0) as i32;
 
     let nb_blocs_detr = stats.get("minecraft:mined")
         .map(|custom| sum_stats_by_prefix(custom, "minecraft:"))
@@ -344,13 +356,11 @@ fn extract_player_stats(json: &Value) -> (
 
     let dist_elytres = custom
         .get("minecraft:aviate_one_cm")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0) as i32;
+        .and_then(|v| v.as_i64()).unwrap_or(0) as i32;
 
     let dist_vol = custom
         .get("minecraft:fly_one_cm")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0) as i32;
+        .and_then(|v| v.as_i64()).unwrap_or(0) as i32;
 
     (
         tmps_jeux as i64,
