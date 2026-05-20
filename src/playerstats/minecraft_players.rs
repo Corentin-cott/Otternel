@@ -8,13 +8,13 @@ use crate::helper;
 /// Récupère les stats des joueurs Minecraft dans un monde donné
 /// # Parameters
 /// - `server_id`: l'id du serveur
-/// - `container_name`: conteneur docker qui héberge le serveur MC
-/// - `world_name`: nom du monde (ex: "world", "netherhub")
+/// - `container_name`: conteneur docker qui héberge le serveur MC (Optionnel si local)
+/// - `world_name`: nom du monde (ex: "world", "netherhub") (Optionnel si local)
 ///
 pub async fn fetch_mc_player_stats(
     server_id: u64,
-    container_name: &str,
-    world_name: &str,
+    container_name: Option<&str>,
+    world_name: Option<&str>,
 ) -> anyhow::Result<HashMap<String, Value>> {
     let local_path = format!("/stats/{}/", server_id);
 
@@ -23,12 +23,16 @@ pub async fn fetch_mc_player_stats(
         return fetch_local_json_files(&local_path).await;
     }
 
+    // Fallback to Docker
+    let container = container_name.ok_or_else(|| anyhow::anyhow!("Container name missing for Docker fetch (Server ID: {})", server_id))?;
+    let world = world_name.ok_or_else(|| anyhow::anyhow!("World name missing for Docker fetch (Server ID: {})", server_id))?;
+
     let fetcher = DockerFetcher::new();
 
     // Path to stats folder
-    let remote_path = format!("/server/{}/stats", world_name);
+    let remote_path = format!("/server/{}/stats", world);
 
-    let stats = fetcher.fetch_json_files(container_name, &remote_path).await?;
+    let stats = fetcher.fetch_json_files(container, &remote_path).await?;
     Ok(stats)
 }
 
@@ -79,11 +83,14 @@ pub async fn sync_mc_stats_to_db() -> anyhow::Result<()> {
         info!("{} {}","Stating playerstats fetch for the server :".to_string().blue(), server.nom.green().bold() );
 
         // Fetch Minecraft stats from server files
-        let container = server.contenaire.as_deref().ok_or_else(|| anyhow::anyhow!("none"))?;
-        let world_name = server.nom_monde.as_deref().ok_or_else(|| anyhow::anyhow!("none"))?;
+        let container = server.contenaire.as_deref();
+        let world_name = server.nom_monde.as_deref();
 
         let stats_map: HashMap<String, Value> = match fetch_mc_player_stats(server.id, container, world_name).await {
-            Ok(map) => map,
+            Ok(map) => {
+                info!("Successfully fetched {} player stats for server {}", map.len(), server.nom.green().bold());
+                map
+            },
             Err(e) => {
                 warn!("Failed to fetch stats for server {}: {}", server.nom.yellow().bold(), e.to_string().yellow().bold());
                 continue;
@@ -93,17 +100,22 @@ pub async fn sync_mc_stats_to_db() -> anyhow::Result<()> {
         let mut total_cobblemon_pokemon = 0;
         let mut total_cobblemon_trainer = 0;
 
-        match cobblemon_stats::fetch_cobblemon_stats(server.id, container, world_name).await {
-            Ok((pokemon, trainers)) => {
-                total_cobblemon_pokemon = pokemon;
-                total_cobblemon_trainer = trainers;
-            }
-            Err(e) => {
-                    debug!(
-                    "Failed to fetch cobblemon stats for server {}: {}",
-                    server.nom.yellow().bold(),
-                    e.to_string().yellow().bold()
-                );
+        if let (Some(c), Some(w)) = (container, world_name) {
+            match cobblemon_stats::fetch_cobblemon_stats(server.id, c, w).await {
+                Ok((pokemon, trainers)) => {
+                    total_cobblemon_pokemon = pokemon;
+                    total_cobblemon_trainer = trainers;
+                    if pokemon > 0 {
+                        info!("Fetched {} Cobblemon for {} trainers", pokemon, trainers);
+                    }
+                }
+                Err(e) => {
+                        debug!(
+                        "Failed to fetch cobblemon stats for server {}: {}",
+                        server.nom.yellow().bold(),
+                        e.to_string().yellow().bold()
+                    );
+                }
             }
         }
 
@@ -115,7 +127,7 @@ pub async fn sync_mc_stats_to_db() -> anyhow::Result<()> {
         // Filter and get specific values from the stats. Fallback to 0 if none found
         for (uuid, json) in stats_map {
             // Validate and format UUID
-            let uuid = match helper::minecraft_account_formatter::check_and_format_minecraft_uuid(&uuid) {
+            let formatted_uuid = match helper::minecraft_account_formatter::check_and_format_minecraft_uuid(&uuid) {
                 Ok(formatted_uuid) => formatted_uuid,
                 Err(e) => {
                     warn!(
@@ -128,12 +140,12 @@ pub async fn sync_mc_stats_to_db() -> anyhow::Result<()> {
             };
 
             // We add the player in case they're not in the database already
-            match db.add_player_if_not_exist("minecraft", uuid.clone()) {
+            match db.add_player_if_not_exist("minecraft", formatted_uuid.clone()) {
                 Ok(player_id) => {
-                    debug!("Minecraft player with uuid : {} is in the database with id : {}", uuid.green().bold(), player_id.to_string().green().bold());
+                    debug!("Minecraft player with uuid : {} is in the database with id : {}", formatted_uuid.green().bold(), player_id.to_string().green().bold());
                 }
                 Err(e) => {
-                    warn!("Could not check or add minecraft player with uuid : {} ; error: {}", uuid.yellow().bold(), e);
+                    warn!("Could not check or add minecraft player with uuid : {} ; error: {}", formatted_uuid.yellow().bold(), e);
                     continue;
                 }
             }
@@ -156,9 +168,9 @@ pub async fn sync_mc_stats_to_db() -> anyhow::Result<()> {
                 achievement
             ) = extract_player_stats(&json);
 
-            if db.add_or_update_playerstats(
+            if let Err(e) = db.add_or_update_playerstats(
                 server.id.clone(),
-                &uuid,
+                &formatted_uuid,
                 tmps_jeux,
                 nb_mort,
                 nb_kills,
@@ -173,13 +185,15 @@ pub async fn sync_mc_stats_to_db() -> anyhow::Result<()> {
                 item_crafted,
                 item_broken,
                 achievement,
-            ).is_ok() {
-                saved_count += 1; // Increment if save is successful
-                info!("Minecraft playerstats added for player : {}", uuid.green().bold());
+            ) {
+                warn!("Failed to add/update player stats for uuid {}: {}", formatted_uuid.yellow().bold(), e);
             } else {
-                warn!("Failed to add/update player stats for uuid {}.", uuid.yellow().bold());
+                saved_count += 1; // Increment if save is successful
+                debug!("Minecraft playerstats added for player : {}", formatted_uuid.green().bold());
             }
         }
+        
+        info!("Finished server {}: saved {}/{} players", server.nom.green().bold(), saved_count, total_players);
 
         // Send validation webhook
         let embed_color = if saved_count == 0 && total_players == 0 {
@@ -225,31 +239,40 @@ fn extract_player_stats(json: &Value) -> (
     Option<Value>, Option<Value>, Option<Value>, Option<Value>
 ) {
     let stats = json.get("stats").unwrap_or(&Value::Null);
+    
+    if stats.is_null() {
+        debug!("Stats key not found in JSON");
+    }
 
     let mob_killed = stats.get("minecraft:killed").cloned();
     let item_crafted = stats.get("minecraft:crafted").cloned();
     let item_broken = stats.get("minecraft:broken").cloned();
     let achievement = stats.get("minecraft:achievements").cloned();
 
+    let custom = stats.get("minecraft:custom").unwrap_or(&Value::Null);
+    if custom.is_null() {
+        debug!("minecraft:custom key not found in stats");
+    }
+
     let tmps_jeux = [
         "minecraft:play_one_minute",
         "minecraft:play_time"
     ].iter()
-        .map(|k| stats.get("minecraft:custom").unwrap_or(&Value::Null).get(*k).and_then(|v| v.as_i64()).unwrap_or(0))
+        .map(|k| custom.get(*k).and_then(|v| v.as_i64()).unwrap_or(0))
         .sum::<i64>() as i32;
 
-    let nb_mort = stats.get("minecraft:custom")
-        .and_then(|v| v.get("minecraft:deaths"))
+    let nb_mort = custom
+        .get("minecraft:deaths")
         .and_then(|v| v.as_i64())
         .unwrap_or(0) as i32;
 
-    let nb_kills = stats.get("minecraft:custom")
-        .and_then(|v| v.get("minecraft:mob_kills"))
+    let nb_kills = custom
+        .get("minecraft:mob_kills")
         .and_then(|v| v.as_i64())
         .unwrap_or(0) as i32;
 
-    let nb_playerkill = stats.get("minecraft:custom")
-        .and_then(|v| v.get("minecraft:player_kills"))
+    let nb_playerkill = custom
+        .get("minecraft:player_kills")
         .and_then(|v| v.as_i64())
         .unwrap_or(0) as i32;
 
@@ -279,7 +302,7 @@ fn extract_player_stats(json: &Value) -> (
         "minecraft:pig_one_cm",
         "minecraft:strider_one_cm"
     ].iter()
-        .map(|k| stats.get("minecraft:custom").unwrap_or(&Value::Null).get(*k).and_then(|v| v.as_i64()).unwrap_or(0))
+        .map(|k| custom.get(*k).and_then(|v| v.as_i64()).unwrap_or(0))
         .sum::<i64>() as i32;
 
     let dist_pieds = [
@@ -289,18 +312,20 @@ fn extract_player_stats(json: &Value) -> (
         "minecraft:walk_on_water_one_cm",
         "minecraft:walk_under_water_one_cm"
     ].iter()
-        .map(|k| stats.get("minecraft:custom").unwrap_or(&Value::Null).get(*k).and_then(|v| v.as_i64()).unwrap_or(0))
+        .map(|k| custom.get(*k).and_then(|v| v.as_i64()).unwrap_or(0))
         .sum::<i64>() as i32;
 
-    let dist_elytres = stats.get("minecraft:custom")
-        .and_then(|v| v.get("minecraft:aviate_one_cm"))
+    let dist_elytres = custom
+        .get("minecraft:aviate_one_cm")
         .and_then(|v| v.as_i64())
         .unwrap_or(0) as i32;
 
-    let dist_vol = stats.get("minecraft:custom")
-        .and_then(|v| v.get("minecraft:fly_one_cm"))
+    let dist_vol = custom
+        .get("minecraft:fly_one_cm")
         .and_then(|v| v.as_i64())
         .unwrap_or(0) as i32;
+
+    debug!("Extracted stats: play_time={}, deaths={}, kills={}, mined={}, used={}", tmps_jeux, nb_mort, nb_kills, nb_blocs_detr, nb_blocs_pose);
 
     (
         tmps_jeux as i64,
