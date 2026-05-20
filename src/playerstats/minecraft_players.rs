@@ -78,8 +78,42 @@ pub async fn sync_mc_stats_to_db() -> anyhow::Result<()> {
         "Minecraft".green().bold(),
         "players :".blue().bold()
     );
+
+    // Track which servers have already been processed via local discovery
+    let mut processed_server_ids = std::collections::HashSet::new();
+
+    // 1. Discovery via local /stats/ folder
+    if let Ok(mut entries) = tokio::fs::read_dir("/stats/").await {
+        while let Some(entry) = entries.next_entry().await? {
+            let path = entry.path();
+            if path.is_dir() {
+                if let Some(folder_name) = path.file_name().and_then(|s| s.to_str()) {
+                    if let Ok(server_id) = folder_name.parse::<u64>() {
+                        // Find the server in our list
+                        if let Some(server) = minecraft_servers.iter().find(|s| s.id == server_id) {
+                            info!("{} {} (ID: {})", "Discovered local stats for".blue(), server.nom.green().bold(), server_id);
+                            
+                            let container = server.contenaire.as_deref();
+                            let world_name = server.nom_monde.as_deref();
+                            
+                            if let Ok(stats_map) = fetch_mc_player_stats(server_id, container, world_name).await {
+                                process_and_save_stats(&db, server, stats_map).await?;
+                                processed_server_ids.insert(server_id);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Fallback for remaining servers (via Docker Fetcher)
     for server in minecraft_servers {
-        info!("{} {}","Stating playerstats fetch for the server :".to_string().blue(), server.nom.green().bold() );
+        if processed_server_ids.contains(&server.id) {
+            continue;
+        }
+
+        info!("{} {} (ID: {})","Stating Docker stats fetch for:".to_string().blue(), server.nom.green().bold(), server.id );
 
         // Fetch Minecraft stats from server files
         let container = server.contenaire.as_deref();
@@ -93,133 +127,142 @@ pub async fn sync_mc_stats_to_db() -> anyhow::Result<()> {
             }
         };
 
-        let mut total_cobblemon_pokemon = 0;
-        let mut total_cobblemon_trainer = 0;
+        process_and_save_stats(&db, &server, stats_map).await?;
+    }
 
-        if let (Some(c), Some(w)) = (container, world_name) {
-            match cobblemon_stats::fetch_cobblemon_stats(server.id, c, w).await {
-                Ok((pokemon, trainers)) => {
-                    total_cobblemon_pokemon = pokemon;
-                    total_cobblemon_trainer = trainers;
-                }
-                Err(e) => {
-                        debug!(
-                        "Failed to fetch cobblemon stats for server {}: {}",
-                        server.nom.yellow().bold(),
-                        e.to_string().yellow().bold()
-                    );
-                }
+    Ok(())
+}
+
+async fn process_and_save_stats(db: &crate::db::repository_default::Database, server: &crate::db::models::Serveur, stats_map: HashMap<String, Value>) -> anyhow::Result<()> {
+    let container = server.contenaire.as_deref();
+    let world_name = server.nom_monde.as_deref();
+
+    let mut total_cobblemon_pokemon = 0;
+    let mut total_cobblemon_trainer = 0;
+
+    if let (Some(c), Some(w)) = (container, world_name) {
+        match cobblemon_stats::fetch_cobblemon_stats(server.id, c, w).await {
+            Ok((pokemon, trainers)) => {
+                total_cobblemon_pokemon = pokemon;
+                total_cobblemon_trainer = trainers;
+            }
+            Err(e) => {
+                    debug!(
+                    "Failed to fetch cobblemon stats for server {}: {}",
+                    server.nom.yellow().bold(),
+                    e.to_string().yellow().bold()
+                );
             }
         }
+    }
 
-        trace!("Stats Map : {:?}", stats_map);
+    trace!("Stats Map : {:?}", stats_map);
 
-        let mut saved_count = 0; // Count number of playerstats saved
-        let total_players = stats_map.len();
+    let mut saved_count = 0; // Count number of playerstats saved
+    let total_players = stats_map.len();
 
-        // Filter and get specific values from the stats. Fallback to 0 if none found
-        for (uuid, json) in stats_map {
-            // Validate and format UUID
-            let formatted_uuid = match helper::minecraft_account_formatter::check_and_format_minecraft_uuid(&uuid) {
-                Ok(formatted_uuid) => formatted_uuid,
-                Err(e) => {
-                    warn!(
-                "Invalid minecraft UUID : {} ; error: {}",
-                uuid.yellow().bold(),
-                e
-            );
-                    continue;
-                }
-            };
-
-            // We add the player in case they're not in the database already
-            match db.add_player_if_not_exist("minecraft", formatted_uuid.clone()) {
-                Ok(player_id) => {
-                    debug!("Minecraft player with uuid : {} is in the database with id : {}", formatted_uuid.green().bold(), player_id.to_string().green().bold());
-                }
-                Err(e) => {
-                    warn!("Could not check or add minecraft player with uuid : {} ; error: {}", formatted_uuid.yellow().bold(), e);
-                    continue;
-                }
+    // Filter and get specific values from the stats. Fallback to 0 if none found
+    for (uuid, json) in stats_map {
+        // Validate and format UUID
+        let formatted_uuid = match helper::minecraft_account_formatter::check_and_format_minecraft_uuid(&uuid) {
+            Ok(formatted_uuid) => formatted_uuid,
+            Err(e) => {
+                warn!(
+            "Invalid minecraft UUID : {} ; error: {}",
+            uuid.yellow().bold(),
+            e
+        );
+                continue;
             }
-
-            // Now the stats
-            let (
-                tmps_jeux,
-                nb_mort,
-                nb_kills,
-                nb_playerkill,
-                nb_blocs_detr,
-                nb_blocs_pose,
-                dist_total,
-                dist_pieds,
-                dist_elytres,
-                dist_vol,
-                mob_killed,
-                item_crafted,
-                item_broken,
-                achievement
-            ) = extract_player_stats(&json);
-
-            if db.add_or_update_playerstats(
-                server.id.clone(),
-                &formatted_uuid,
-                tmps_jeux,
-                nb_mort,
-                nb_kills,
-                nb_playerkill,
-                mob_killed,
-                nb_blocs_detr,
-                nb_blocs_pose,
-                dist_total,
-                dist_pieds,
-                dist_elytres,
-                dist_vol,
-                item_crafted,
-                item_broken,
-                achievement,
-            ).is_ok() {
-                saved_count += 1; // Increment if save is successful
-                info!("Minecraft playerstats added for player : {}", formatted_uuid.green().bold());
-            } else {
-                warn!("Failed to add/update player stats for uuid {}.", formatted_uuid.yellow().bold());
-            }
-        }
-
-        // Send validation webhook
-        let embed_color = if saved_count == 0 && total_players == 0 {
-            "90c480".to_string() // Light green
-        } else if saved_count == total_players {
-            "126020".to_string() // Green
-        } else {
-            "601010".to_string() // Red
         };
 
-        // Supertext
-        let mut embed_supertext: String = format!("Enregistrement de {} joueurs sur {}", saved_count, total_players);
-
-        if total_cobblemon_pokemon > 0 && total_cobblemon_trainer > 0 {
-            embed_supertext.push_str(&format!(
-                "\nEnregistrement de {} pokemon pour {} dresseur.",
-                total_cobblemon_pokemon, total_cobblemon_trainer
-            ));
+        // We add the player in case they're not in the database already
+        match db.add_player_if_not_exist("minecraft", formatted_uuid.clone()) {
+            Ok(player_id) => {
+                debug!("Minecraft player with uuid : {} is in the database with id : {}", formatted_uuid.green().bold(), player_id.to_string().green().bold());
+            }
+            Err(e) => {
+                warn!("Could not check or add minecraft player with uuid : {} ; error: {}", formatted_uuid.yellow().bold(), e);
+                continue;
+            }
         }
 
-        if let Err(e) = helper::webhook_discord::send_discord_embed(
-            "otternel",
-            "",
-            &format!("Playerstats fetch for {}", server.nom),
-            "",
-            &embed_supertext,
-            embed_color.into(),
-            &*server.image.unwrap(),
-            "",
-            "",
-            &format!("{}", server.nom),
-            Some(chrono::Utc::now().to_rfc3339())
-        ) {
-            error!("{e}");
+        // Now the stats
+        let (
+            tmps_jeux,
+            nb_mort,
+            nb_kills,
+            nb_playerkill,
+            nb_blocs_detr,
+            nb_blocs_pose,
+            dist_total,
+            dist_pieds,
+            dist_elytres,
+            dist_vol,
+            mob_killed,
+            item_crafted,
+            item_broken,
+            achievement
+        ) = extract_player_stats(&json);
+
+        if db.add_or_update_playerstats(
+            server.id.clone(),
+            &formatted_uuid,
+            tmps_jeux,
+            nb_mort,
+            nb_kills,
+            nb_playerkill,
+            mob_killed,
+            nb_blocs_detr,
+            nb_blocs_pose,
+            dist_total,
+            dist_pieds,
+            dist_elytres,
+            dist_vol,
+            item_crafted,
+            item_broken,
+            achievement,
+        ).is_ok() {
+            saved_count += 1; // Increment if save is successful
+            info!("Minecraft playerstats added for player : {}", formatted_uuid.green().bold());
+        } else {
+            warn!("Failed to add/update player stats for uuid {}.", formatted_uuid.yellow().bold());
         }
+    }
+
+    // Send validation webhook
+    let embed_color = if saved_count == 0 && total_players == 0 {
+        "90c480".to_string() // Light green
+    } else if saved_count == total_players {
+        "126020".to_string() // Green
+    } else {
+        "601010".to_string() // Red
+    };
+
+    // Supertext
+    let mut embed_supertext: String = format!("Enregistrement de {} joueurs sur {}", saved_count, total_players);
+
+    if total_cobblemon_pokemon > 0 && total_cobblemon_trainer > 0 {
+        embed_supertext.push_str(&format!(
+            "\nEnregistrement de {} pokemon pour {} dresseur.",
+            total_cobblemon_pokemon, total_cobblemon_trainer
+        ));
+    }
+
+    if let Err(e) = helper::webhook_discord::send_discord_embed(
+        "otternel",
+        "",
+        &format!("Playerstats fetch for {}", server.nom),
+        "",
+        &embed_supertext,
+        embed_color.into(),
+        &*server.image.as_deref().unwrap_or(""),
+        "",
+        "",
+        &format!("{}", server.nom),
+        Some(chrono::Utc::now().to_rfc3339())
+    ) {
+        error!("{e}");
     }
 
     Ok(())
