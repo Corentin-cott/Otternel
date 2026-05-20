@@ -50,14 +50,16 @@ async fn main() {
     });
 
     // Check if player stats fetch is enabled
-    let get_player_stats_enabled = std::env::var("GET_PLAYER_STATS_ENABLED")
-        .unwrap_or_else(|_| "false".to_string())
-        .to_lowercase() == "true";
+    let get_player_stats_enabled_raw = std::env::var("GET_PLAYER_STATS_ENABLED")
+        .unwrap_or_else(|_| "false".to_string());
+    let get_player_stats_enabled = get_player_stats_enabled_raw.to_lowercase() == "true";
 
     if !get_player_stats_enabled {
-        info!("{}", "GET_PLAYER_STATS_ENABLED is false : periodic events will not start".yellow());
+        info!("{}", format!("GET_PLAYER_STATS_ENABLED is set to '{}' : periodic playerstats fetch is DISABLED", get_player_stats_enabled_raw).yellow());
         future::pending::<()>().await; // Even if player stats is disabled, keep the program running
     }
+
+    info!("{}", "GET_PLAYER_STATS_ENABLED is true : periodic playerstats fetch is starting...".green().bold());
 
     // Read the interval from environment
     let every_sec: u64 = std::env::var("PERIODIC_EVENTS_EVERY_SEC")
@@ -65,14 +67,16 @@ async fn main() {
         .parse()
         .expect("PERIODIC_EVENTS_EVERY_SEC must be a valid number");
 
-    info!("{}", format!("Periodic event launching every {} seconds", every_sec).green());
+    info!("{}", format!("Periodic stats fetch will run every {} seconds", every_sec).cyan());
 
     // Create the periodic interval
     let mut interval = tokio::time::interval(Duration::from_secs(every_sec));
 
     loop {
         interval.tick().await;
+        info!("{}", "Triggering periodic playerstats fetch...".blue());
         periodic_playerstats_fetch().await;
+        info!("{}", "Periodic playerstats fetch cycle completed. Waiting for next interval.".black().bold());
     }
 
 }
