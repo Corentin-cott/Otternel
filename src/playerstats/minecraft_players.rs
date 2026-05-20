@@ -7,13 +7,22 @@ use crate::helper;
 
 /// Récupère les stats des joueurs Minecraft dans un monde donné
 /// # Parameters
+/// - `server_id`: l'id du serveur
 /// - `container_name`: conteneur docker qui héberge le serveur MC
 /// - `world_name`: nom du monde (ex: "world", "netherhub")
 ///
 pub async fn fetch_mc_player_stats(
+    server_id: u64,
     container_name: &str,
     world_name: &str,
 ) -> anyhow::Result<HashMap<String, Value>> {
+    let local_path = format!("/stats/{}/", server_id);
+
+    if std::path::Path::new(&local_path).exists() {
+        info!("{} for server ID {}", "Found local stats path".blue(), server_id.to_string().green().bold());
+        return fetch_local_json_files(&local_path).await;
+    }
+
     let fetcher = DockerFetcher::new();
 
     // Path to stats folder
@@ -21,6 +30,26 @@ pub async fn fetch_mc_player_stats(
 
     let stats = fetcher.fetch_json_files(container_name, &remote_path).await?;
     Ok(stats)
+}
+
+async fn fetch_local_json_files(path: &str) -> anyhow::Result<HashMap<String, Value>> {
+    let mut result = HashMap::new();
+    let mut entries = tokio::fs::read_dir(path).await?;
+
+    while let Some(entry) = entries.next_entry().await? {
+        let path = entry.path();
+
+        if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("json") {
+            let contents = tokio::fs::read_to_string(&path).await?;
+            if let Ok(json) = serde_json::from_str::<Value>(&contents) {
+                if let Some(uuid) = path.file_stem().and_then(|s| s.to_str()) {
+                    result.insert(uuid.to_string(), json);
+                }
+            }
+        }
+    }
+
+    Ok(result)
 }
 
 pub async fn sync_mc_stats_to_db() -> anyhow::Result<()> {
@@ -53,7 +82,7 @@ pub async fn sync_mc_stats_to_db() -> anyhow::Result<()> {
         let container = server.contenaire.as_deref().ok_or_else(|| anyhow::anyhow!("none"))?;
         let world_name = server.nom_monde.as_deref().ok_or_else(|| anyhow::anyhow!("none"))?;
 
-        let stats_map: HashMap<String, Value> = match fetch_mc_player_stats(container, world_name).await {
+        let stats_map: HashMap<String, Value> = match fetch_mc_player_stats(server.id, container, world_name).await {
             Ok(map) => map,
             Err(e) => {
                 warn!("Failed to fetch stats for server {}: {}", server.nom.yellow().bold(), e.to_string().yellow().bold());
