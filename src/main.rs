@@ -59,6 +59,8 @@ async fn main() {
         future::pending::<()>().await; // Even if player stats is disabled, keep the program running
     }
 
+    info!("{}", "GET_PLAYER_STATS_ENABLED is true : periodic playerstats fetch is starting...".green().bold());
+
     // Read the interval from environment
     let every_sec: u64 = std::env::var("PERIODIC_EVENTS_EVERY_SEC")
         .expect("PERIODIC_EVENTS_EVERY_SEC must be set in the environment")
