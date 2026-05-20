@@ -15,13 +15,14 @@ Entry point of Otternel
 */
 #[tokio::main]
 async fn main() {
-    // Splash screen, it's not useful, but it's cool
+    // Splash screen
     println!(
         "
 *  _____ _   _                   _
 | |     | |_| |_ ___ ___ ___ ___| |
 | |  |  |  _|  _| -_|  _|   | -_| |
 | |_____|_| |_| |___|_| |_|_|___|_|
+└ Version: 1.1.0-DEBUG-LOCAL-STATS
 └ {}\n",
         chrono::Local::now()
     );
@@ -57,7 +58,13 @@ async fn main() {
 
     info!("{}", "GET_PLAYER_STATS_ENABLED is true : periodic playerstats fetch is starting...".green().bold());
 
-    let every_sec = cfg.periodic_events_every_sec;
+    let every_sec = if let Some(min) = cfg.periodic_events_every_min {
+        info!("Using interval from PERIODIC_EVENTS_EVERY_MIN: {} minutes", min);
+        min * 60
+    } else {
+        cfg.periodic_events_every_sec
+    };
+    
     info!("{}", format!("Periodic stats fetch will run every {} seconds", every_sec).cyan());
 
     // Create the periodic interval

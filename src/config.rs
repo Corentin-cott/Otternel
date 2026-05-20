@@ -22,6 +22,8 @@ pub struct Config {
 
     #[serde(default = "default_periodic_events_every_sec")]
     pub periodic_events_every_sec: u64,
+
+    pub periodic_events_every_min: Option<u64>,
 }
 
 fn default_get_player_stats_enabled() -> bool {
