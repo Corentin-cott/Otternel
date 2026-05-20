@@ -15,14 +15,13 @@ Entry point of Otternel
 */
 #[tokio::main]
 async fn main() {
-    // Splash screen
+    // Splash screen, it's not useful, but it's cool
     println!(
         "
 *  _____ _   _                   _
 | |     | |_| |_ ___ ___ ___ ___| |
 | |  |  |  _|  _| -_|  _|   | -_| |
 | |_____|_| |_| |___|_| |_|_|___|_|
-└ Version: 1.1.0-DEBUG-LOCAL-STATS
 └ {}\n",
         chrono::Local::now()
     );
@@ -51,30 +50,29 @@ async fn main() {
     });
 
     // Check if player stats fetch is enabled
-    if !cfg.get_player_stats_enabled {
-        info!("{}", "Periodic playerstats fetch is DISABLED (GET_PLAYER_STATS_ENABLED is false)".yellow());
+    let get_player_stats_enabled = std::env::var("GET_PLAYER_STATS_ENABLED")
+        .unwrap_or_else(|_| "false".to_string())
+        .to_lowercase() == "true";
+
+    if !get_player_stats_enabled {
+        info!("{}", "GET_PLAYER_STATS_ENABLED is false : periodic events will not start".yellow());
         future::pending::<()>().await; // Even if player stats is disabled, keep the program running
     }
 
-    info!("{}", "GET_PLAYER_STATS_ENABLED is true : periodic playerstats fetch is starting...".green().bold());
+    // Read the interval from environment
+    let every_sec: u64 = std::env::var("PERIODIC_EVENTS_EVERY_SEC")
+        .expect("PERIODIC_EVENTS_EVERY_SEC must be set in the environment")
+        .parse()
+        .expect("PERIODIC_EVENTS_EVERY_SEC must be a valid number");
 
-    let every_sec = if let Some(min) = cfg.periodic_events_every_min {
-        info!("Using interval from PERIODIC_EVENTS_EVERY_MIN: {} minutes", min);
-        min * 60
-    } else {
-        cfg.periodic_events_every_sec
-    };
-    
-    info!("{}", format!("Periodic stats fetch will run every {} seconds", every_sec).cyan());
+    info!("{}", format!("Periodic event launching every {} seconds", every_sec).green());
 
     // Create the periodic interval
     let mut interval = tokio::time::interval(Duration::from_secs(every_sec));
 
     loop {
         interval.tick().await;
-        info!("{}", "Triggering periodic playerstats fetch...".blue());
         periodic_playerstats_fetch().await;
-        info!("{}", "Periodic playerstats fetch cycle completed. Waiting for next interval.".black().bold());
     }
 
 }

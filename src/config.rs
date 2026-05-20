@@ -16,22 +16,6 @@ pub struct Config {
     pub mcmyadmin_webhook_url: String,
     pub mcmyadmin_secondary_webhook_activated: String,
     pub mcmyadmin_secondary_webhook_url: String,
-
-    #[serde(default = "default_get_player_stats_enabled")]
-    pub get_player_stats_enabled: bool,
-
-    #[serde(default = "default_periodic_events_every_sec")]
-    pub periodic_events_every_sec: u64,
-
-    pub periodic_events_every_min: Option<u64>,
-}
-
-fn default_get_player_stats_enabled() -> bool {
-    false
-}
-
-fn default_periodic_events_every_sec() -> u64 {
-    3600
 }
 
 impl Config {

@@ -19,7 +19,6 @@ pub async fn fetch_mc_player_stats(
     let local_path = format!("/stats/{}/", server_id);
 
     if std::path::Path::new(&local_path).exists() {
-        info!("{} for server ID {}", "Found local stats path".blue(), server_id.to_string().green().bold());
         return fetch_local_json_files(&local_path).await;
     }
 
@@ -87,10 +86,7 @@ pub async fn sync_mc_stats_to_db() -> anyhow::Result<()> {
         let world_name = server.nom_monde.as_deref();
 
         let stats_map: HashMap<String, Value> = match fetch_mc_player_stats(server.id, container, world_name).await {
-            Ok(map) => {
-                info!("Successfully fetched {} player stats for server {}", map.len(), server.nom.green().bold());
-                map
-            },
+            Ok(map) => map,
             Err(e) => {
                 warn!("Failed to fetch stats for server {}: {}", server.nom.yellow().bold(), e.to_string().yellow().bold());
                 continue;
@@ -105,9 +101,6 @@ pub async fn sync_mc_stats_to_db() -> anyhow::Result<()> {
                 Ok((pokemon, trainers)) => {
                     total_cobblemon_pokemon = pokemon;
                     total_cobblemon_trainer = trainers;
-                    if pokemon > 0 {
-                        info!("Fetched {} Cobblemon for {} trainers", pokemon, trainers);
-                    }
                 }
                 Err(e) => {
                         debug!(
@@ -168,7 +161,7 @@ pub async fn sync_mc_stats_to_db() -> anyhow::Result<()> {
                 achievement
             ) = extract_player_stats(&json);
 
-            if let Err(e) = db.add_or_update_playerstats(
+            if db.add_or_update_playerstats(
                 server.id.clone(),
                 &formatted_uuid,
                 tmps_jeux,
@@ -185,15 +178,13 @@ pub async fn sync_mc_stats_to_db() -> anyhow::Result<()> {
                 item_crafted,
                 item_broken,
                 achievement,
-            ) {
-                warn!("Failed to add/update player stats for uuid {}: {}", formatted_uuid.yellow().bold(), e);
-            } else {
+            ).is_ok() {
                 saved_count += 1; // Increment if save is successful
-                debug!("Minecraft playerstats added for player : {}", formatted_uuid.green().bold());
+                info!("Minecraft playerstats added for player : {}", formatted_uuid.green().bold());
+            } else {
+                warn!("Failed to add/update player stats for uuid {}.", formatted_uuid.yellow().bold());
             }
         }
-        
-        info!("Finished server {}: saved {}/{} players", server.nom.green().bold(), saved_count, total_players);
 
         // Send validation webhook
         let embed_color = if saved_count == 0 && total_players == 0 {
@@ -239,10 +230,6 @@ fn extract_player_stats(json: &Value) -> (
     Option<Value>, Option<Value>, Option<Value>, Option<Value>
 ) {
     let stats = json.get("stats").unwrap_or(&Value::Null);
-    
-    if stats.is_null() {
-        debug!("Stats key not found in JSON");
-    }
 
     let mob_killed = stats.get("minecraft:killed").cloned();
     let item_crafted = stats.get("minecraft:crafted").cloned();
@@ -250,9 +237,6 @@ fn extract_player_stats(json: &Value) -> (
     let achievement = stats.get("minecraft:achievements").cloned();
 
     let custom = stats.get("minecraft:custom").unwrap_or(&Value::Null);
-    if custom.is_null() {
-        debug!("minecraft:custom key not found in stats");
-    }
 
     let tmps_jeux = [
         "minecraft:play_one_minute",
@@ -324,8 +308,6 @@ fn extract_player_stats(json: &Value) -> (
         .get("minecraft:fly_one_cm")
         .and_then(|v| v.as_i64())
         .unwrap_or(0) as i32;
-
-    debug!("Extracted stats: play_time={}, deaths={}, kills={}, mined={}, used={}", tmps_jeux, nb_mort, nb_kills, nb_blocs_detr, nb_blocs_pose);
 
     (
         tmps_jeux as i64,
