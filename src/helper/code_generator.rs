@@ -83,11 +83,10 @@ pub fn handle_unlinked_player_join(db: &Database, player_id: &str, playername: &
     // For now, we assume it's always Minecraft and we send the code via RCON
     let rcon_helper = RconHelper::new()?;
     let command_to_run = format!(
-        r#"/tellraw {player} ["", {{"text":"[Antre des Loutres]","color":"gold"}}, {{"text":" Voici un code pour lié ton compte Minecraft à ton compte Discord : "}}, {{"text":"{code}","color":"gold"}}, {{"text":". Tu peux l'utiliser sur la page de ton profil "}}, {{"text":"(https://antredesloutres.fr)","italic":true,"underlined":true,"color":"dark_aqua","clickEvent":{{"action":"open_url","value":"https://antredesloutres.fr/joueurs/minecraft/{player_lc}/"}}}}, {{"text":"."}}]"#,
+        r#"/tellraw {player} ["", {{"text":"[Antre des Loutres]","color":"gold"}}, {{"text":" Voici un code pour lier ton compte Minecraft à ton compte Discord : "}}, {{"text":"{code}","color":"gold","bold":true,"clickEvent":{{"action":"copy_to_clipboard","value":"{code}"}}}}, {{"text":". Utilise la commande "}}, {{"text":"/link-account {code}","color":"aqua","bold":true}}, {{"text":" avec "}}, {{"text":"Arisoutre","color":"light_purple","bold":true}}, {{"text":" (notre bot Discord)."}}]"#,
         player = playername,
-        code = new_code,
-        player_lc = playername.to_lowercase()
-    ); 
+        code = new_code
+    );
 
     // Execute the RCON command asynchronously with Tokio
     let serverlog_id = serverlog_id.to_string();
