@@ -20,8 +20,12 @@ services:
       - "host.docker.internal:host-gateway"
     networks:
       - pocketbase_network
+      - server-net
 
 networks:
   pocketbase_network:
     external: true
     name: pocketbase_network
+  server-net:
+    external: true
+    name: server-net
