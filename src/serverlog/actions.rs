@@ -266,6 +266,12 @@ fn on_minecraft_player_advancement(line: &str, serverlog_id: &str) {
 }
 
 fn on_player_death(line: &str, serverlog_id: &str) {
+
+    if line.contains("l='ServerLevel") || line.contains(", message:") {
+        debug!("Ignoring non-player death log line: {}", line);
+        return;
+    }
+
     // Resolve active server from serverlog_id
     let server: Server = get_server_by_id(serverlog_id);
 

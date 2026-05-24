@@ -330,13 +330,17 @@ fn read_new(path: &PathBuf, positions: &mut HashMap<PathBuf, u64>, compiled_trig
             // Send line to mcmyadmin
             let _ = webhook_discord::send_discord_message(webhook_discord::get_webhook_mcmyadmin_by_server_id(serverlog_id.as_deref()), line);
 
-            // Match triggers only against the last (complete) line
+            // Match triggers only against the last (complete) line. A single log
+            // line maps to at most one action, so stop at the first trigger that
+            // matches AND applies to this server (avoids double-posting when a
+            // line matches several patterns, e.g. "died" + "was slain by").
             for (re, func, ids_opt) in compiled_triggers {
                 // Using cleaned line and not line
                 if re.is_match(cleaned_line) {
                     if ids_opt.as_ref().map(|ids| ids.iter().any(|x| x == id)).unwrap_or(true) {
                         // Envoie la ligne nettoyée ou l'originale selon ton besoin
                         serverlog::actions::dispatch(func, cleaned_line, id);
+                        break;
                     }
                 }
             }
