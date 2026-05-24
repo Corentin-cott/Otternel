@@ -7,7 +7,7 @@ mod playerstats;
 use tokio::task;
 use futures::future;
 use colored::Colorize;
-use log::{info, error};
+use log::{info, error, warn};
 use std::time::Duration;
 
 /**
@@ -59,11 +59,17 @@ async fn main() {
         future::pending::<()>().await; // Even if player stats is disabled, keep the program running
     }
 
-    // Read the interval from environment
+    info!("{}", "GET_PLAYER_STATS_ENABLED is true : periodic playerstats fetch is starting...".green().bold());
+
+    // Read the interval from environment (Default to 1 hour if not set)
     let every_sec: u64 = std::env::var("PERIODIC_EVENTS_EVERY_SEC")
-        .expect("PERIODIC_EVENTS_EVERY_SEC must be set in the environment")
-        .parse()
-        .expect("PERIODIC_EVENTS_EVERY_SEC must be a valid number");
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(3600);
+
+    if std::env::var("PERIODIC_EVENTS_EVERY_SEC").is_err() {
+        warn!("PERIODIC_EVENTS_EVERY_SEC not set, using default: 3600s");
+    }
 
     info!("{}", format!("Periodic event launching every {} seconds", every_sec).green());
 

@@ -12,7 +12,12 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       # Read only server logs
       - /opt/docker/minecraft/la_vanilla_s4/data/logs:/serverlog/1:ro
+      - /opt/docker/minecraft/isle_of_berk/data/logs:/serverlog/27:ro
       - /opt/docker/palworld/palworld_vanilla/data/Pal/Saved/Logs:/serverlog/3:ro
+      # Read only server stats
+      - /opt/docker/minecraft/isle_of_berk/data/world/stats:/stats/27/:ro
+      - /opt/docker/minecraft/la_vanilla_s4/data/world/players/stats:/stats/1/:ro
+      - /opt/docker/minecraft/ottergames/data/ottergames/players/stats:/stats/26/:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:

@@ -5,22 +5,40 @@ use colored::Colorize;
 use log::{debug, error, info, trace, warn};
 use crate::helper;
 
-/// Récupère les stats des joueurs Minecraft dans un monde donné
+/// Récupère les stats des joueurs Minecraft depuis le stockage local
 /// # Parameters
-/// - `container_name`: conteneur docker qui héberge le serveur MC
-/// - `world_name`: nom du monde (ex: "world", "netherhub")
+/// - `server_id`: l'id du serveur (correspond au nom du dossier dans /stats/)
 ///
 pub async fn fetch_mc_player_stats(
-    container_name: &str,
-    world_name: &str,
+    server_id: u64,
 ) -> anyhow::Result<HashMap<String, Value>> {
-    let fetcher = DockerFetcher::new();
+    let local_path = format!("/stats/{}/", server_id);
 
-    // Path to stats folder
-    let remote_path = format!("/server/{}/stats", world_name);
+    if std::path::Path::new(&local_path).exists() {
+        return fetch_local_json_files(&local_path).await;
+    }
 
-    let stats = fetcher.fetch_json_files(container_name, &remote_path).await?;
-    Ok(stats)
+    anyhow::bail!("Aucun dossier local pour ce serveur (Path: {})", local_path)
+}
+
+async fn fetch_local_json_files(path: &str) -> anyhow::Result<HashMap<String, Value>> {
+    let mut result = HashMap::new();
+    let mut entries = tokio::fs::read_dir(path).await?;
+
+    while let Some(entry) = entries.next_entry().await? {
+        let path = entry.path();
+
+        if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("json") {
+            let contents = tokio::fs::read_to_string(&path).await?;
+            if let Ok(json) = serde_json::from_str::<Value>(&contents) {
+                if let Some(uuid) = path.file_stem().and_then(|s| s.to_str()) {
+                    result.insert(uuid.to_string(), json);
+                }
+            }
+        }
+    }
+
+    Ok(result)
 }
 
 pub async fn sync_mc_stats_to_db() -> anyhow::Result<()> {
@@ -46,25 +64,35 @@ pub async fn sync_mc_stats_to_db() -> anyhow::Result<()> {
         "Minecraft".green().bold(),
         "players :".blue().bold()
     );
+
     for server in minecraft_servers {
-        info!("{} {}","Stating playerstats fetch for the server :".to_string().blue(), server.nom.green().bold() );
+        info!("{} {} (ID: {})","Stating playerstats fetch for:".to_string().blue(), server.nom.green().bold(), server.id );
 
-        // Fetch Minecraft stats from server files
-        let container = server.contenaire.as_deref().ok_or_else(|| anyhow::anyhow!("none"))?;
-        let world_name = server.nom_monde.as_deref().ok_or_else(|| anyhow::anyhow!("none"))?;
-
-        let stats_map: HashMap<String, Value> = match fetch_mc_player_stats(container, world_name).await {
+        // Fetch Minecraft stats ONLY from local storage
+        let stats_map: HashMap<String, Value> = match fetch_mc_player_stats(server.id).await {
             Ok(map) => map,
-            Err(e) => {
-                warn!("Failed to fetch stats for server {}: {}", server.nom.yellow().bold(), e.to_string().yellow().bold());
+            Err(_) => {
+                info!("{} pour le serveur {}", "Aucun dossier local".yellow(), server.nom.yellow().bold());
                 continue;
             }
         };
 
-        let mut total_cobblemon_pokemon = 0;
-        let mut total_cobblemon_trainer = 0;
+        process_and_save_stats(&db, &server, stats_map).await?;
+    }
 
-        match cobblemon_stats::fetch_cobblemon_stats(server.id, container, world_name).await {
+    Ok(())
+}
+
+async fn process_and_save_stats(db: &crate::db::repository_default::Database, server: &crate::db::models::Serveur, stats_map: HashMap<String, Value>) -> anyhow::Result<()> {
+    let container = server.contenaire.as_deref();
+    let world_name = server.nom_monde.as_deref();
+
+    let mut total_cobblemon_pokemon = 0;
+    let mut total_cobblemon_trainer = 0;
+
+    // Cobblemon still uses Docker Fetcher for now as it's a different logic
+    if let (Some(c), Some(w)) = (container, world_name) {
+        match cobblemon_stats::fetch_cobblemon_stats(server.id, c, w).await {
             Ok((pokemon, trainers)) => {
                 total_cobblemon_pokemon = pokemon;
                 total_cobblemon_trainer = trainers;
@@ -77,115 +105,115 @@ pub async fn sync_mc_stats_to_db() -> anyhow::Result<()> {
                 );
             }
         }
+    }
 
-        trace!("Stats Map : {:?}", stats_map);
+    trace!("Stats Map : {:?}", stats_map);
 
-        let mut saved_count = 0; // Count number of playerstats saved
-        let total_players = stats_map.len();
+    let mut saved_count = 0; // Count number of playerstats saved
+    let total_players = stats_map.len();
 
-        // Filter and get specific values from the stats. Fallback to 0 if none found
-        for (uuid, json) in stats_map {
-            // Validate and format UUID
-            let uuid = match helper::minecraft_account_formatter::check_and_format_minecraft_uuid(&uuid) {
-                Ok(formatted_uuid) => formatted_uuid,
-                Err(e) => {
-                    warn!(
-                "Invalid minecraft UUID : {} ; error: {}",
-                uuid.yellow().bold(),
-                e
-            );
-                    continue;
-                }
-            };
-
-            // We add the player in case they're not in the database already
-            match db.add_player_if_not_exist("minecraft", uuid.clone()) {
-                Ok(player_id) => {
-                    debug!("Minecraft player with uuid : {} is in the database with id : {}", uuid.green().bold(), player_id.to_string().green().bold());
-                }
-                Err(e) => {
-                    warn!("Could not check or add minecraft player with uuid : {} ; error: {}", uuid.yellow().bold(), e);
-                    continue;
-                }
+    // Filter and get specific values from the stats. Fallback to 0 if none found
+    for (uuid, json) in stats_map {
+        // Validate and format UUID
+        let formatted_uuid = match helper::minecraft_account_formatter::check_and_format_minecraft_uuid(&uuid) {
+            Ok(formatted_uuid) => formatted_uuid,
+            Err(e) => {
+                warn!(
+            "Invalid minecraft UUID : {} ; error: {}",
+            uuid.yellow().bold(),
+            e
+        );
+                continue;
             }
-
-            // Now the stats
-            let (
-                tmps_jeux,
-                nb_mort,
-                nb_kills,
-                nb_playerkill,
-                nb_blocs_detr,
-                nb_blocs_pose,
-                dist_total,
-                dist_pieds,
-                dist_elytres,
-                dist_vol,
-                mob_killed,
-                item_crafted,
-                item_broken,
-                achievement
-            ) = extract_player_stats(&json);
-
-            if db.add_or_update_playerstats(
-                server.id.clone(),
-                &uuid,
-                tmps_jeux,
-                nb_mort,
-                nb_kills,
-                nb_playerkill,
-                mob_killed,
-                nb_blocs_detr,
-                nb_blocs_pose,
-                dist_total,
-                dist_pieds,
-                dist_elytres,
-                dist_vol,
-                item_crafted,
-                item_broken,
-                achievement,
-            ).is_ok() {
-                saved_count += 1; // Increment if save is successful
-                info!("Minecraft playerstats added for player : {}", uuid.green().bold());
-            } else {
-                warn!("Failed to add/update player stats for uuid {}.", uuid.yellow().bold());
-            }
-        }
-
-        // Send validation webhook
-        let embed_color = if saved_count == 0 && total_players == 0 {
-            "90c480".to_string() // Light green
-        } else if saved_count == total_players {
-            "126020".to_string() // Green
-        } else {
-            "601010".to_string() // Red
         };
 
-        // Supertext
-        let mut embed_supertext: String = format!("Enregistrement de {} joueurs sur {}", saved_count, total_players);
-
-        if total_cobblemon_pokemon > 0 && total_cobblemon_trainer > 0 {
-            embed_supertext.push_str(&format!(
-                "\nEnregistrement de {} pokemon pour {} dresseur.",
-                total_cobblemon_pokemon, total_cobblemon_trainer
-            ));
+        // We add the player in case they're not in the database already
+        match db.add_player_if_not_exist("minecraft", formatted_uuid.clone()) {
+            Ok(player_id) => {
+                debug!("Minecraft player with uuid : {} is in the database with id : {}", formatted_uuid.green().bold(), player_id.to_string().green().bold());
+            }
+            Err(e) => {
+                warn!("Could not check or add minecraft player with uuid : {} ; error: {}", formatted_uuid.yellow().bold(), e);
+                continue;
+            }
         }
 
-        if let Err(e) = helper::webhook_discord::send_discord_embed(
-            "otternel",
-            "",
-            &format!("Playerstats fetch for {}", server.nom),
-            "",
-            &embed_supertext,
-            embed_color.into(),
-            &*server.image.unwrap(),
-            "",
-            "",
-            &format!("{}", server.nom),
-            Some(chrono::Utc::now().to_rfc3339())
-        ) {
-            error!("{e}");
+        // Now the stats
+        let (
+            tmps_jeux,
+            nb_mort,
+            nb_kills,
+            nb_playerkill,
+            nb_blocs_detr,
+            nb_blocs_pose,
+            dist_total,
+            dist_pieds,
+            dist_elytres,
+            dist_vol,
+            mob_killed,
+            item_crafted,
+            item_broken,
+            achievement
+        ) = extract_player_stats(&json);
+
+        if db.add_or_update_playerstats(
+            server.id.clone(),
+            &formatted_uuid,
+            tmps_jeux,
+            nb_mort,
+            nb_kills,
+            nb_playerkill,
+            mob_killed,
+            nb_blocs_detr,
+            nb_blocs_pose,
+            dist_total,
+            dist_pieds,
+            dist_elytres,
+            dist_vol,
+            item_crafted,
+            item_broken,
+            achievement,
+        ).is_ok() {
+            saved_count += 1; // Increment if save is successful
+            info!("Minecraft playerstats added for player : {}", formatted_uuid.green().bold());
+        } else {
+            warn!("Failed to add/update player stats for uuid {}.", formatted_uuid.yellow().bold());
         }
+    }
+
+    // Send validation webhook
+    let embed_color = if saved_count == 0 && total_players == 0 {
+        "90c480".to_string() // Light green
+    } else if saved_count == total_players {
+        "126020".to_string() // Green
+    } else {
+        "601010".to_string() // Red
+    };
+
+    // Supertext
+    let mut embed_supertext: String = format!("Enregistrement de {} joueurs sur {}", saved_count, total_players);
+
+    if total_cobblemon_pokemon > 0 && total_cobblemon_trainer > 0 {
+        embed_supertext.push_str(&format!(
+            "\nEnregistrement de {} pokemon pour {} dresseur.",
+            total_cobblemon_pokemon, total_cobblemon_trainer
+        ));
+    }
+
+    if let Err(e) = helper::webhook_discord::send_discord_embed(
+        "otternel",
+        "",
+        &format!("Playerstats fetch for {}", server.nom),
+        "",
+        &embed_supertext,
+        embed_color.into(),
+        &*server.image.as_deref().unwrap_or(""),
+        "",
+        "",
+        &format!("{}", server.nom),
+        Some(chrono::Utc::now().to_rfc3339())
+    ) {
+        error!("{e}");
     }
 
     Ok(())
@@ -202,27 +230,26 @@ fn extract_player_stats(json: &Value) -> (
     let item_broken = stats.get("minecraft:broken").cloned();
     let achievement = stats.get("minecraft:achievements").cloned();
 
+    let custom = stats.get("minecraft:custom").unwrap_or(&Value::Null);
+
     let tmps_jeux = [
         "minecraft:play_one_minute",
         "minecraft:play_time"
     ].iter()
-        .map(|k| stats.get("minecraft:custom").unwrap_or(&Value::Null).get(*k).and_then(|v| v.as_i64()).unwrap_or(0))
+        .map(|k| custom.get(*k).and_then(|v| v.as_i64()).unwrap_or(0))
         .sum::<i64>() as i32;
 
-    let nb_mort = stats.get("minecraft:custom")
-        .and_then(|v| v.get("minecraft:deaths"))
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0) as i32;
+    let nb_mort = custom
+        .get("minecraft:deaths")
+        .and_then(|v| v.as_i64()).unwrap_or(0) as i32;
 
-    let nb_kills = stats.get("minecraft:custom")
-        .and_then(|v| v.get("minecraft:mob_kills"))
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0) as i32;
+    let nb_kills = custom
+        .get("minecraft:mob_kills")
+        .and_then(|v| v.as_i64()).unwrap_or(0) as i32;
 
-    let nb_playerkill = stats.get("minecraft:custom")
-        .and_then(|v| v.get("minecraft:player_kills"))
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0) as i32;
+    let nb_playerkill = custom
+        .get("minecraft:player_kills")
+        .and_then(|v| v.as_i64()).unwrap_or(0) as i32;
 
     let nb_blocs_detr = stats.get("minecraft:mined")
         .map(|custom| sum_stats_by_prefix(custom, "minecraft:"))
@@ -250,7 +277,7 @@ fn extract_player_stats(json: &Value) -> (
         "minecraft:pig_one_cm",
         "minecraft:strider_one_cm"
     ].iter()
-        .map(|k| stats.get("minecraft:custom").unwrap_or(&Value::Null).get(*k).and_then(|v| v.as_i64()).unwrap_or(0))
+        .map(|k| custom.get(*k).and_then(|v| v.as_i64()).unwrap_or(0))
         .sum::<i64>() as i32;
 
     let dist_pieds = [
@@ -260,18 +287,16 @@ fn extract_player_stats(json: &Value) -> (
         "minecraft:walk_on_water_one_cm",
         "minecraft:walk_under_water_one_cm"
     ].iter()
-        .map(|k| stats.get("minecraft:custom").unwrap_or(&Value::Null).get(*k).and_then(|v| v.as_i64()).unwrap_or(0))
+        .map(|k| custom.get(*k).and_then(|v| v.as_i64()).unwrap_or(0))
         .sum::<i64>() as i32;
 
-    let dist_elytres = stats.get("minecraft:custom")
-        .and_then(|v| v.get("minecraft:aviate_one_cm"))
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0) as i32;
+    let dist_elytres = custom
+        .get("minecraft:aviate_one_cm")
+        .and_then(|v| v.as_i64()).unwrap_or(0) as i32;
 
-    let dist_vol = stats.get("minecraft:custom")
-        .and_then(|v| v.get("minecraft:fly_one_cm"))
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0) as i32;
+    let dist_vol = custom
+        .get("minecraft:fly_one_cm")
+        .and_then(|v| v.as_i64()).unwrap_or(0) as i32;
 
     (
         tmps_jeux as i64,
