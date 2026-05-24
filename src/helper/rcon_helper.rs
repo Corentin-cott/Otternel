@@ -40,20 +40,21 @@ impl RconHelper {
     /// Executes an RCON command on a specific server.
     ///
     /// # Arguments
-    /// * `active_server_id` - The ID from the `serveurs_actifs` table.
+    /// * `server_id` - The `servers` record id. RCON creds are resolved from the
+    ///   linked `active_servers` entry.
     /// * `command` - The command string to execute (no leading slash).
     ///
     /// # Returns
     /// The string response from the server.
     pub async fn execute_command(
         &self,
-        active_server_id: &str,
+        server_id: &str,
         command: &str,
     ) -> Result<String, RconHelperError> {
         let rcon_params = self
             .db
-            .get_rcon_params_by_id(active_server_id)?
-            .ok_or_else(|| RconHelperError::ServerNotFound(active_server_id.to_string()))?;
+            .get_rcon_params_by_server_id(server_id)?
+            .ok_or_else(|| RconHelperError::ServerNotFound(server_id.to_string()))?;
 
         let addr = format!("{}:{}", rcon_params.host, rcon_params.port);
 
@@ -77,7 +78,7 @@ impl RconHelper {
     /// * `command` - The command string to execute on all servers.
     ///
     /// # Returns
-    /// A `Vec` of tuples `(active_id, Result<String, RconHelperError>)` — one entry per server,
+    /// A `Vec` of tuples `(server_id, Result<String, RconHelperError>)` — one entry per server,
     /// allowing partial failures without interrupting the whole broadcast.
     pub async fn broadcast_command_to_active_global_servers(
         &self,
@@ -90,8 +91,8 @@ impl RconHelper {
 
         let mut results = Vec::new();
         for server in servers {
-            let outcome = self.execute_command(&server.active_id, command).await;
-            results.push((server.active_id, outcome));
+            let outcome = self.execute_command(&server.server_id, command).await;
+            results.push((server.server_id, outcome));
         }
         results
     }

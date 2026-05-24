@@ -42,7 +42,7 @@ fn on_test(serverlog_id: &str) {
 
 fn on_player_connection_update(line: &str, serverlog_id: &str, co_type: &str) {
     // Resolve active server at serverlog_id
-    let server: Server = get_server_by_active_server_id(serverlog_id);
+    let server: Server = get_server_by_id(serverlog_id);
 
     // Extract playername from a line like:
     // "[00:00:000] [Server thread/INFO]: playername joined/left the game"
@@ -143,15 +143,15 @@ fn on_player_connection_update(line: &str, serverlog_id: &str, co_type: &str) {
             server_nom
         );
 
-        for target_server in servers.into_iter().filter(|s| s.active_id != origin_id) {
-            match rcon.execute_command(&target_server.active_id, &command).await {
+        for target_server in servers.into_iter().filter(|s| s.server_id != origin_id) {
+            match rcon.execute_command(&target_server.server_id, &command).await {
                 Ok(_) => debug!(
                     "Cross-server connection update relayed to server id={}",
-                    target_server.active_id
+                    target_server.server_id
                 ),
                 Err(e) => warn!(
                     "Failed to relay connection update to server id={}: {}",
-                    target_server.active_id, e
+                    target_server.server_id, e
                 ),
             }
         }
@@ -160,7 +160,7 @@ fn on_player_connection_update(line: &str, serverlog_id: &str, co_type: &str) {
 
 fn on_player_message(line: &str, serverlog_id: &str) {
     // Resolve active server at serverlog_id
-    let server: Server = get_server_by_active_server_id(serverlog_id);
+    let server: Server = get_server_by_id(serverlog_id);
 
     let re = regex::Regex::new(r"<([^>]+)>\s(.+)").unwrap();
     let caps = re.captures(line).unwrap();
@@ -215,15 +215,15 @@ fn on_player_message(line: &str, serverlog_id: &str) {
             message
         );
 
-        for target_server in servers.into_iter().filter(|s| s.active_id != origin_id) {
-            match rcon.execute_command(&target_server.active_id, &command).await {
+        for target_server in servers.into_iter().filter(|s| s.server_id != origin_id) {
+            match rcon.execute_command(&target_server.server_id, &command).await {
                 Ok(_) => debug!(
                     "Cross-server message relayed to server id={}",
-                    target_server.active_id
+                    target_server.server_id
                 ),
                 Err(e) => warn!(
                     "Failed to relay message to server id={}: {}",
-                    target_server.active_id, e
+                    target_server.server_id, e
                 ),
             }
         }
@@ -232,7 +232,7 @@ fn on_player_message(line: &str, serverlog_id: &str) {
 
 fn on_minecraft_player_advancement(line: &str, serverlog_id: &str) {
     // Resolve active server at serverlog_id
-    let server: Server = get_server_by_active_server_id(serverlog_id);
+    let server: Server = get_server_by_id(serverlog_id);
 
     let re = regex::Regex::new(
         r"^(?:\[[^\]]+\]\s*:?\s*)*([^ ]+)\s+(?:has made the advancement|completed the challenge|reached the goal)\s+\[?(.+?)\]$"
@@ -267,7 +267,7 @@ fn on_minecraft_player_advancement(line: &str, serverlog_id: &str) {
 
 fn on_player_death(line: &str, serverlog_id: &str) {
     // Resolve active server from serverlog_id
-    let server: Server = get_server_by_active_server_id(serverlog_id);
+    let server: Server = get_server_by_id(serverlog_id);
 
     // Exemple de ligne : "[17:58:38] [Server thread/INFO]: TheAzertor fell from a high place"
     let re = regex::Regex::new(r": ([^ ]+) (.+)$").unwrap();
@@ -298,7 +298,7 @@ fn on_player_death(line: &str, serverlog_id: &str) {
     }
 }
 
-fn get_server_by_active_server_id(serverlog_id: &str) -> Server {
+fn get_server_by_id(serverlog_id: &str) -> Server {
     // Load configuration for DB pool
     let db = match helper::open_database::open_db_from_env() {
         Some(db) => db,
@@ -308,7 +308,7 @@ fn get_server_by_active_server_id(serverlog_id: &str) -> Server {
         }
     };
 
-    match db.get_server_by_active_server_id(serverlog_id) {
+    match db.get_server_by_id(serverlog_id) {
         Ok(Some(s)) => {
             debug!(
                 "Resolved active server {} -> '{}'",

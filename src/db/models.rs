@@ -33,12 +33,13 @@ pub struct Server {
     pub image: Option<String>,
 }
 
-/// An active server (PocketBase `active_servers`) joined with its linked
-/// server's display info, used for cross-server broadcasts.
+/// A globally-broadcastable server: a `servers` record that is enabled and
+/// global and has a linked `active_servers` entry (RCON creds). Used for
+/// cross-server broadcasts.
 #[derive(Debug, Clone, Default)]
 pub struct ActiveGlobalServer {
-    /// `active_servers` record id.
-    pub active_id: String,
+    /// `servers` record id (the universal key; RCON is resolved from it).
+    pub server_id: String,
     pub name: String,
     pub platform_name: Option<String>,
     pub version: String,

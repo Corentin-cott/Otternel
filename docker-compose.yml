@@ -11,23 +11,17 @@ services:
       # TODO : REPLACE WITH A PROXY TO AVOID GIVING DOCKER ACCESS TO THE HOST FILE SYSTEM ASAP
       - /var/run/docker.sock:/var/run/docker.sock
       # Read only server logs
-      - /opt/docker/minecraft/la_vanilla_s4/data/logs:/serverlog/1:ro
-      - /opt/docker/minecraft/isle_of_berk/data/logs:/serverlog/27:ro
-      - /opt/docker/palworld/palworld_vanilla/data/Pal/Saved/Logs:/serverlog/3:ro
+      - /opt/docker/minecraft/la_vanilla_s4/data/logs:/serverlog/499m2bs21q0xa52:ro
+      - /opt/docker/minecraft/isle_of_berk/data/logs:/serverlog/72gty67zb339942:ro
       # Read only server stats
-      - /opt/docker/minecraft/isle_of_berk/data/world/stats:/stats/27/:ro
-      - /opt/docker/minecraft/la_vanilla_s4/data/world/players/stats:/stats/1/:ro
-      - /opt/docker/minecraft/ottergames/data/ottergames/players/stats:/stats/26/:ro
+      - /opt/docker/minecraft/isle_of_berk/data/world/stats:/stats/72gty67zb339942/:ro
+      - /opt/docker/minecraft/la_vanilla_s4/data/world/players/stats:/stats/499m2bs21q0xa52/:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
-      - mysql_network
       - pocketbase_network
 
 networks:
-  mysql_network:
-    external: true
-    name: mysql_network
   pocketbase_network:
     external: true
     name: pocketbase_network

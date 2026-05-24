@@ -58,10 +58,8 @@ impl Database {
     // active_servers
     // ===========================
 
-    /// Fetches all active servers whose linked server is enabled and global.
-    ///
-    /// Returns the `active_servers` record id alongside the linked server's
-    /// display info, used for cross-server broadcasts.
+    /// Fetches all enabled, global servers that have a linked `active_servers`
+    /// entry. Keyed on the `servers` record id, used for cross-server broadcasts.
     pub fn get_all_active_global_servers(&self) -> Result<Vec<ActiveGlobalServer>, DbError> {
         let items = self.list_records(
             "active_servers",
@@ -74,12 +72,6 @@ impl Database {
 
         let mut out = Vec::with_capacity(items.len());
         for item in &items {
-            let active_id = item
-                .get("id")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-                .to_string();
-
             // The linked server must be present (expanded) to be usable.
             let Some(server_val) = item.get("expand").and_then(|e| e.get("server")) else {
                 continue;
@@ -87,7 +79,7 @@ impl Database {
             let server = self.parse_server(server_val)?;
 
             out.push(ActiveGlobalServer {
-                active_id,
+                server_id: server.id,
                 name: server.name,
                 platform_name: server.platform_name,
                 version: server.version,
@@ -99,39 +91,37 @@ impl Database {
         Ok(out)
     }
 
-    /// Fetches the [`Server`] linked to an `active_servers` record.
+    /// Fetches a [`Server`] directly by its `servers` record id.
     ///
-    /// Returns `Ok(None)` if no active server matches `active_id` or it has no
-    /// linked server.
-    pub fn get_server_by_active_server_id(
-        &self,
-        active_id: &str,
-    ) -> Result<Option<Server>, DbError> {
-        let filter = format!("id='{}'", active_id);
+    /// Returns `Ok(None)` if no server matches `server_id`.
+    pub fn get_server_by_id(&self, server_id: &str) -> Result<Option<Server>, DbError> {
+        let filter = format!("id='{}'", server_id);
         let items = self.list_records(
-            "active_servers",
+            "servers",
             &[
                 ("filter", filter.as_str()),
-                ("expand", "server.platform"),
+                ("expand", "platform"),
                 ("perPage", "1"),
             ],
         )?;
 
-        let Some(item) = items.into_iter().next() else {
-            return Ok(None);
-        };
-        let Some(server_val) = item.get("expand").and_then(|e| e.get("server")) else {
-            return Ok(None);
-        };
-        Ok(Some(self.parse_server(server_val)?))
+        match items.into_iter().next() {
+            Some(item) => Ok(Some(self.parse_server(&item)?)),
+            None => Ok(None),
+        }
     }
 
-    /// Fetches RCON parameters from an `active_servers` record by its id.
+    /// Fetches RCON parameters for a server, resolved from the `active_servers`
+    /// record whose `server` relation points at `server_id`.
     ///
-    /// Returns `Ok(None)` if the record does not exist.
-    pub fn get_rcon_params_by_id(&self, active_id: &str) -> Result<Option<RconParams>, DbError> {
-        match self.get_record("active_servers", active_id) {
-            Ok(v) => {
+    /// Returns `Ok(None)` if the server has no active entry.
+    pub fn get_rcon_params_by_server_id(
+        &self,
+        server_id: &str,
+    ) -> Result<Option<RconParams>, DbError> {
+        let filter = format!("server='{}'", server_id);
+        match self.find_first("active_servers", &filter)? {
+            Some(v) => {
                 let field = |key: &str| {
                     v.get(key)
                         .and_then(|x| x.as_str())
@@ -144,8 +134,7 @@ impl Database {
                     password: field("rcon_password"),
                 }))
             }
-            Err(DbError::NotFound) => Ok(None),
-            Err(e) => Err(e),
+            None => Ok(None),
         }
     }
 }
