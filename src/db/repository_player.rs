@@ -13,12 +13,18 @@ impl Database {
     // platforms (helper)
     // ===========================
 
-    /// Resolves a `platforms` record id by its `name` (e.g. "minecraft").
+    /// Resolves a `platforms` record id by its `name`, case-insensitively
+    /// (e.g. "minecraft" matches a record named "Minecraft").
     fn get_platform_id_by_name(&self, name: &str) -> Result<Option<String>, DbError> {
-        let filter = format!("name='{}'", name);
-        Ok(self
-            .find_first("platforms", &filter)?
-            .and_then(|v| v.get("id").and_then(|x| x.as_str()).map(String::from)))
+        let items = self.list_records("platforms", &[("perPage", "200")])?;
+        Ok(items.into_iter().find_map(|v| {
+            let record_name = v.get("name").and_then(|x| x.as_str())?;
+            if record_name.eq_ignore_ascii_case(name) {
+                v.get("id").and_then(|x| x.as_str()).map(String::from)
+            } else {
+                None
+            }
+        }))
     }
 
     // ===========================

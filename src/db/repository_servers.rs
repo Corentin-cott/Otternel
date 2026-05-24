@@ -39,19 +39,27 @@ impl Database {
     // servers
     // ===========================
 
-    /// Fetches all servers for a given game (matched on `platform.name`).
+    /// Fetches all servers for a given game, matched case-insensitively on the
+    /// expanded `platform.name` (e.g. "minecraft" matches a "Minecraft" platform).
     pub fn get_all_server_by_game(&self, game: Box<str>) -> Result<Vec<Server>, DbError> {
-        let filter = format!("platform.name='{}'", game);
         let items = self.list_records(
             "servers",
-            &[
-                ("filter", filter.as_str()),
-                ("expand", "platform"),
-                ("perPage", "200"),
-            ],
+            &[("expand", "platform"), ("perPage", "200")],
         )?;
 
-        items.iter().map(|v| self.parse_server(v)).collect()
+        let mut out = Vec::new();
+        for v in &items {
+            let server = self.parse_server(v)?;
+            if server
+                .platform_name
+                .as_deref()
+                .map(|p| p.eq_ignore_ascii_case(&game))
+                .unwrap_or(false)
+            {
+                out.push(server);
+            }
+        }
+        Ok(out)
     }
 
     // ===========================
