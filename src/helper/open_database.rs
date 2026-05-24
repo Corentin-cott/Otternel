@@ -40,6 +40,7 @@ pub fn open_db_from_env() -> Option<crate::db::repository_default::Database> {
         &cfg.pocketbase_url,
         &cfg.pocketbase_admin_email,
         &cfg.pocketbase_admin_password,
+        cfg.pocketbase_public_url.as_deref(),
     ) {
         Ok(db) => Some(db),
         Err(e) => {

@@ -40,6 +40,7 @@ struct AuthResponse {
 /// `401` on a request. All record helpers attach the `Authorization` header.
 pub struct Database {
     base_url: String,
+    public_base_url: String,
     admin_email: String,
     admin_password: String,
     token: Mutex<String>,
@@ -49,18 +50,30 @@ impl Database {
     /// Creates a new client and performs the initial superuser authentication.
     ///
     /// # Parameters
-    /// - `base_url`: PocketBase base URL (e.g. `https://pb.example.com`). A
-    ///   trailing slash is trimmed.
+    /// - `base_url`: PocketBase base URL used for API calls (e.g. the internal
+    ///   address `http://pocketbase:8090`). A trailing slash is trimmed.
     /// - `admin_email` / `admin_password`: superuser credentials used for the
     ///   `_superusers` auth-with-password flow.
+    /// - `public_url`: public-facing base URL used to build file URLs that
+    ///   external services (e.g. Discord) must reach. Falls back to `base_url`
+    ///   when `None`.
     ///
     /// # Errors
     /// Returns [`DbError`] if the initial authentication request fails.
-    pub fn new(base_url: &str, admin_email: &str, admin_password: &str) -> Result<Self, DbError> {
+    pub fn new(
+        base_url: &str,
+        admin_email: &str,
+        admin_password: &str,
+        public_url: Option<&str>,
+    ) -> Result<Self, DbError> {
         let base_url = base_url.trim_end_matches('/').to_string();
+        let public_base_url = public_url
+            .map(|u| u.trim_end_matches('/').to_string())
+            .unwrap_or_else(|| base_url.clone());
         let token = Self::authenticate(&base_url, admin_email, admin_password)?;
         Ok(Self {
             base_url,
+            public_base_url,
             admin_email: admin_email.to_string(),
             admin_password: admin_password.to_string(),
             token: Mutex::new(token),
@@ -100,10 +113,16 @@ impl Database {
         self.token.lock().unwrap().clone()
     }
 
-    /// Returns the configured PocketBase base URL (trailing slash trimmed).
-    /// Used to build file URLs (`{base}/api/files/{collection}/{id}/{filename}`).
+    /// Returns the PocketBase base URL used for API calls (trailing slash trimmed).
     pub fn base_url(&self) -> &str {
         &self.base_url
+    }
+
+    /// Returns the public-facing base URL for file URLs that external services
+    /// must reach (`{public}/api/files/{collection}/{id}/{filename}`). Falls
+    /// back to the API base URL when `POCKETBASE_PUBLIC_URL` is unset.
+    pub fn public_base_url(&self) -> &str {
+        &self.public_base_url
     }
 
     /// Runs `build` with the current token; on a `401`, re-authenticates once

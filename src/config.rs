@@ -5,6 +5,7 @@ use serde::Deserialize;
 pub struct Config {
     pub log_level: String,
     pub pocketbase_url: String,
+    pub pocketbase_public_url: Option<String>,
     pub pocketbase_admin_email: String,
     pub pocketbase_admin_password: String,
     pub serverlog_folder: String,

@@ -26,11 +26,12 @@ impl Database {
             .and_then(|n| n.as_str())
             .map(|s| s.to_string());
 
-        // PocketBase stores only the filename; expand it to a full file URL.
+        // PocketBase stores only the filename; expand it to a full file URL on
+        // the public host so external services (Discord) can fetch it.
         server.image = server
             .image
             .filter(|f| !f.is_empty())
-            .map(|f| format!("{}/api/files/servers/{}/{}", self.base_url(), server.id, f));
+            .map(|f| format!("{}/api/files/servers/{}/{}", self.public_base_url(), server.id, f));
 
         Ok(server)
     }
