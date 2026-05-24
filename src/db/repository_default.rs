@@ -100,6 +100,12 @@ impl Database {
         self.token.lock().unwrap().clone()
     }
 
+    /// Returns the configured PocketBase base URL (trailing slash trimmed).
+    /// Used to build file URLs (`{base}/api/files/{collection}/{id}/{filename}`).
+    pub fn base_url(&self) -> &str {
+        &self.base_url
+    }
+
     /// Runs `build` with the current token; on a `401`, re-authenticates once
     /// and retries. The closure must rebuild the request on each call because a
     /// `ureq` request is consumed when sent.

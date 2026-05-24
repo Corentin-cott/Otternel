@@ -1,171 +1,151 @@
-use mysql::{params, prelude::Queryable};
-use crate::db::models::{Serveur};
-use crate::db::models::{ServeurActifGlobal};
-use crate::db::models::{RconParams};
+use serde_json::Value;
 
-use super::repository_default::Database;
+use crate::db::models::{ActiveGlobalServer, RconParams, Server};
+
+use super::repository_default::{Database, DbError};
 
 impl Database {
     // ===========================
-    // serveurs
+    // Record -> model helpers
     // ===========================
 
-    /// Fetch all serveurs from a game.
-    pub fn get_all_server_by_game(
-        &self,
-        game: Box<str>,
-    ) -> Result<Vec<Serveur>, mysql::Error> {
-        let mut conn = self.get_conn()?;
-        let result: Vec<Serveur> = conn.exec_map(
-            r#"SELECT id, nom, jeu, version, modpack, modpack_url, nom_monde, embed_color,
-              contenaire, description, actif, global, type, image
-       FROM serveurs
-       WHERE jeu = :jeu"#,
-            params! { "jeu" => game },
-            |mut row: mysql::Row| {
-                Serveur {
-                    id: row.take("id").unwrap(),
-                    nom: row.take("nom").unwrap(),
-                    jeu: row.take("jeu").unwrap(),
-                    version: row.take("version").unwrap(),
-                    modpack: row.take("modpack"),
-                    modpack_url: row.take("modpack_url"),
-                    nom_monde: row.take("nom_monde"),
-                    embed_color: row.take("embed_color"),
-                    contenaire: row.take("contenaire"),
-                    description: row.take("description").expect("REASON"),
-                    actif: row.take("actif").unwrap(),
-                    global: row.take("global").unwrap(),
-                    r#type: row.take("type"),
-                    image: row.take("image"),
-                }
-            },
-        )?;
+    /// Parses a PocketBase `servers` record into a [`Server`].
+    ///
+    /// Expects the record to optionally carry `expand.platform` (to resolve
+    /// `platform_name`). The raw `image` filename is rewritten into a full file
+    /// URL; an empty filename becomes `None`.
+    fn parse_server(&self, v: &Value) -> Result<Server, DbError> {
+        let mut server: Server =
+            serde_json::from_value(v.clone()).map_err(|e| DbError::Decode(e.to_string()))?;
 
-        Ok(result)
+        // Resolve the human-readable platform name from the expanded relation.
+        server.platform_name = v
+            .get("expand")
+            .and_then(|e| e.get("platform"))
+            .and_then(|p| p.get("name"))
+            .and_then(|n| n.as_str())
+            .map(|s| s.to_string());
+
+        // PocketBase stores only the filename; expand it to a full file URL.
+        server.image = server
+            .image
+            .filter(|f| !f.is_empty())
+            .map(|f| format!("{}/api/files/servers/{}/{}", self.base_url(), server.id, f));
+
+        Ok(server)
     }
 
     // ===========================
-    // serveurs_actif
+    // servers
     // ===========================
 
-    /// Fetch all active and global servers from the database.
-    ///
-    /// This function retrieves all servers where `actif = true` AND `global = true`,
-    /// returning only the fields required for active global server display.
-    ///
-    /// # Returns
-    ///
-    /// `Result<Vec<ServeurActifGlobal>, mysql::Error>` - A list of matching servers.
-    pub fn get_all_active_global_servers(&self) -> Result<Vec<ServeurActifGlobal>, mysql::Error> {
-        let mut conn = self.get_conn()?;
-        let result: Vec<ServeurActifGlobal> = conn.exec_map(
-            r#"SELECT sa.id as active_id, s.nom, s.jeu, s.version, s.embed_color, s.contenaire, s.type
-                FROM serveurs s
-                INNER JOIN serveurs_actifs sa ON sa.serveurs_id = s.id
-                WHERE s.actif = true AND s.global = true"#,
-            (),
-            |mut row: mysql::Row| ServeurActifGlobal {
-                active_id: row.take("active_id").unwrap(),
-                nom: row.take("nom").unwrap(),
-                jeu: row.take("jeu").unwrap(),
-                version: row.take("version").unwrap(),
-                embed_color: row.take("embed_color"),
-                contenaire: row.take("contenaire"),
-                r#type: row.take("type"),
-            },
+    /// Fetches all servers for a given game (matched on `platform.name`).
+    pub fn get_all_server_by_game(&self, game: Box<str>) -> Result<Vec<Server>, DbError> {
+        let filter = format!("platform.name='{}'", game);
+        let items = self.list_records(
+            "servers",
+            &[
+                ("filter", filter.as_str()),
+                ("expand", "platform"),
+                ("perPage", "200"),
+            ],
         )?;
-        Ok(result)
+
+        items.iter().map(|v| self.parse_server(v)).collect()
     }
 
-    /// Fetch a `Serveur` using an active server (serveurs_actifs) id.
-    /// Fetch a `Serveur` using an active server ID from the `serveurs_actifs` table.
+    // ===========================
+    // active_servers
+    // ===========================
+
+    /// Fetches all active servers whose linked server is enabled and global.
     ///
-    /// This function performs the following steps:
-    /// 1. Looks up the `serveurs_id` associated with the given `active_id` in the `serveurs_actifs` table.
-    /// 2. If a matching `serveurs_id` is found, retrieves the full `Serveur` record from the `serveurs` table.
-    /// 3. Returns `Ok(Some(Serveur))` if found, or `Ok(None)` if no active server matches the given ID.
+    /// Returns the `active_servers` record id alongside the linked server's
+    /// display info, used for cross-server broadcasts.
+    pub fn get_all_active_global_servers(&self) -> Result<Vec<ActiveGlobalServer>, DbError> {
+        let items = self.list_records(
+            "active_servers",
+            &[
+                ("filter", "server.is_enabled=true && server.is_global=true"),
+                ("expand", "server.platform"),
+                ("perPage", "200"),
+            ],
+        )?;
+
+        let mut out = Vec::with_capacity(items.len());
+        for item in &items {
+            let active_id = item
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+
+            // The linked server must be present (expanded) to be usable.
+            let Some(server_val) = item.get("expand").and_then(|e| e.get("server")) else {
+                continue;
+            };
+            let server = self.parse_server(server_val)?;
+
+            out.push(ActiveGlobalServer {
+                active_id,
+                name: server.name,
+                platform_name: server.platform_name,
+                version: server.version,
+                embed_color: server.embed_color,
+                container: server.container,
+                r#type: server.r#type,
+            });
+        }
+        Ok(out)
+    }
+
+    /// Fetches the [`Server`] linked to an `active_servers` record.
     ///
-    /// # Arguments
-    ///
-    /// * `active_id` - The ID of the active server to look up.
-    ///
-    /// # Returns
-    ///
-    /// `Result<Option<Serveur>, mysql::Error>` - Returns the `Serveur` if found, otherwise `None`.
+    /// Returns `Ok(None)` if no active server matches `active_id` or it has no
+    /// linked server.
     pub fn get_server_by_active_server_id(
         &self,
-        active_id: u64,
-    ) -> Result<Option<Serveur>, mysql::Error> {
-        let mut conn = self.get_conn()?;
-
-        let serveurs_id_opt: Option<u64> = conn.exec_first(
-            "SELECT serveurs_id FROM serveurs_actifs WHERE id = :id",
-            params! { "id" => active_id },
+        active_id: &str,
+    ) -> Result<Option<Server>, DbError> {
+        let filter = format!("id='{}'", active_id);
+        let items = self.list_records(
+            "active_servers",
+            &[
+                ("filter", filter.as_str()),
+                ("expand", "server.platform"),
+                ("perPage", "1"),
+            ],
         )?;
 
-        let serveurs_id = match serveurs_id_opt {
-            Some(id) => id,
-            None => return Ok(None),
+        let Some(item) = items.into_iter().next() else {
+            return Ok(None);
         };
-
-        let result: Vec<Serveur> = conn.exec_map(
-            r#"SELECT id, nom, jeu, version, modpack, modpack_url, nom_monde, embed_color,
-                contenaire, description, actif, global, type, image
-            FROM serveurs
-            WHERE id = :id"#,
-            params! { "id" => serveurs_id },
-            |mut row: mysql::Row| {
-                Serveur {
-                    id: row.take("id").unwrap(),
-                    nom: row.take("nom").unwrap(),
-                    jeu: row.take("jeu").unwrap(),
-                    version: row.take("version").unwrap(),
-                    modpack: row.take("modpack"),
-                    modpack_url: row.take("modpack_url"),
-                    nom_monde: row.take("nom_monde"),
-                    embed_color: row.take("embed_color"),
-                    contenaire: row.take("contenaire"),
-                    description: row.take("description").unwrap_or_default(),
-                    actif: row.take("actif").unwrap(),
-                    global: row.take("global").unwrap(),
-                    r#type: row.take("type"),
-                    image: row.take("image"),
-                }
-            },
-        )?;
-
-        Ok(result.into_iter().next())
+        let Some(server_val) = item.get("expand").and_then(|e| e.get("server")) else {
+            return Ok(None);
+        };
+        Ok(Some(self.parse_server(server_val)?))
     }
 
-    /// Fetches RCON parameters for an active server by its ID.
+    /// Fetches RCON parameters from an `active_servers` record by its id.
     ///
-    /// # Arguments
-    ///
-    /// * `id` - The primary key (`id`) of the record in the `serveurs_actifs` table.
-    ///
-    /// # Returns
-    ///
-    /// `Result<Option<RconParams>, mysql::Error>` - Returns the RCON parameters if found, otherwise `None`.
-    pub fn get_rcon_params_by_id(
-        &self,
-        id: u64,
-    ) -> Result<Option<RconParams>, mysql::Error> {
-        let mut conn = self.get_conn()?;
-
-        // Use `exec_first` which is optimized for fetching a single row.
-        // It returns an `Option` directly, simplifying the code.
-        let result: Option<(String, String, String)> = conn.exec_first(
-            "SELECT rcon_host, rcon_port, rcon_password FROM serveurs_actifs WHERE id = :id",
-            params! { "id" => id },
-        )?;
-
-        // Map the resulting tuple into the RconParams struct.
-        Ok(result.map(|(host, port, password)| RconParams {
-            host,
-            port,
-            password,
-        }))
+    /// Returns `Ok(None)` if the record does not exist.
+    pub fn get_rcon_params_by_id(&self, active_id: &str) -> Result<Option<RconParams>, DbError> {
+        match self.get_record("active_servers", active_id) {
+            Ok(v) => {
+                let field = |key: &str| {
+                    v.get(key)
+                        .and_then(|x| x.as_str())
+                        .unwrap_or_default()
+                        .to_string()
+                };
+                Ok(Some(RconParams {
+                    host: field("rcon_host"),
+                    port: field("rcon_port"),
+                    password: field("rcon_password"),
+                }))
+            }
+            Err(DbError::NotFound) => Ok(None),
+            Err(e) => Err(e),
+        }
     }
-
 }

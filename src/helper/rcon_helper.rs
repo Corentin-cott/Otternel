@@ -1,4 +1,4 @@
-use crate::db::repository_default::Database;
+use crate::db::repository_default::{Database, DbError};
 use rcon::Connection;
 use std::net::ToSocketAddrs;
 use super::open_database::open_db_from_env;
@@ -6,15 +6,15 @@ use super::open_database::open_db_from_env;
 use thiserror::Error;
 
 /// Custom error type for RconHelper operations.
-/// 
+///
 /// Uses `thiserror` for easy error definition and conversion.
 #[derive(Debug, Error)]
 pub enum RconHelperError {
     #[error("Database error: {0}")]
-    DatabaseError(#[from] mysql::Error),
+    DatabaseError(#[from] DbError),
 
     #[error("Could not find an active server with ID {0}")]
-    ServerNotFound(u64),
+    ServerNotFound(String),
 
     #[error("RCON error: {0}")]
     RconError(#[from] rcon::Error),
@@ -47,13 +47,13 @@ impl RconHelper {
     /// The string response from the server.
     pub async fn execute_command(
         &self,
-        active_server_id: u64,
+        active_server_id: &str,
         command: &str,
     ) -> Result<String, RconHelperError> {
         let rcon_params = self
             .db
             .get_rcon_params_by_id(active_server_id)?
-            .ok_or(RconHelperError::ServerNotFound(active_server_id))?;
+            .ok_or_else(|| RconHelperError::ServerNotFound(active_server_id.to_string()))?;
 
         let addr = format!("{}:{}", rcon_params.host, rcon_params.port);
 
@@ -82,15 +82,15 @@ impl RconHelper {
     pub async fn broadcast_command_to_active_global_servers(
         &self,
         command: &str,
-    ) -> Vec<(u64, Result<String, RconHelperError>)> {
+    ) -> Vec<(String, Result<String, RconHelperError>)> {
         let servers = match self.db.get_all_active_global_servers() {
             Ok(s) => s,
-            Err(e) => return vec![(0, Err(RconHelperError::DatabaseError(e)))],
+            Err(e) => return vec![(String::new(), Err(RconHelperError::DatabaseError(e)))],
         };
 
         let mut results = Vec::new();
         for server in servers {
-            let outcome = self.execute_command(server.active_id, command).await;
+            let outcome = self.execute_command(&server.active_id, command).await;
             results.push((server.active_id, outcome));
         }
         results

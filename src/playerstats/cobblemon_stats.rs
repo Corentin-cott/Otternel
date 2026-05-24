@@ -9,7 +9,7 @@ use crate::playerstats::cobblemon_pokemon_fetch;
 use crate::helper;
 
 pub async fn fetch_cobblemon_stats(
-    server_id: u64,
+    server_id: &str,
     container_name: &str,
     world_name: &str,
 ) -> Result<(usize, usize)> {

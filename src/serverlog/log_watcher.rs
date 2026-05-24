@@ -157,11 +157,11 @@ pub fn watch_serverlogs(folder: &str) -> Result<(), NotifyError> {
 
     // Load the triggers from the triggers.toml file at the root of the project
     #[derive(Deserialize)]
-    struct Trigger { name: Option<String>, pattern: String, function: String, serverlog_ids: Option<Vec<u32>> }
+    struct Trigger { name: Option<String>, pattern: String, function: String, serverlog_ids: Option<Vec<String>> }
     #[derive(Deserialize)]
     struct TriggerFile { trigger: Vec<Trigger> }
 
-    let compiled_triggers: Vec<(Regex, String, Option<Vec<u32>>)> = (|| {
+    let compiled_triggers: Vec<(Regex, String, Option<Vec<String>>)> = (|| {
         let content = std::fs::read_to_string("triggers.toml").ok()?;
         let tf: TriggerFile = toml::from_str(&content).ok()?;
         let mut out = Vec::new();
@@ -269,7 +269,7 @@ pub fn watch_serverlogs(folder: &str) -> Result<(), NotifyError> {
 /// - The function assumes that the file may be appended over time and reads any new content since the last recorded position.
 /// - Handles log rotation or truncation scenarios by resetting the read position to the start of the file.
 ///
-fn read_new(path: &PathBuf, positions: &mut HashMap<PathBuf, u64>, compiled_triggers: &[(Regex, String, Option<Vec<u32>>)]) -> std::io::Result<()> {
+fn read_new(path: &PathBuf, positions: &mut HashMap<PathBuf, u64>, compiled_triggers: &[(Regex, String, Option<Vec<String>>)]) -> std::io::Result<()> {
     let mut f = File::open(path)?;
     let metadata = f.metadata()?;
     let len = metadata.len();
@@ -293,12 +293,12 @@ fn read_new(path: &PathBuf, positions: &mut HashMap<PathBuf, u64>, compiled_trig
 
     // Only proceed if there is any new text
     if !buf.is_empty() {
-        // Get serverlog_id from file name once
+        // Get serverlog_id (the active_servers record id) from the folder name.
         let serverlog_id = path
             .parent()
             .and_then(|p| p.file_name())
             .and_then(|s| s.to_str())
-            .and_then(|s| s.parse::<u32>().ok());
+            .map(|s| s.to_string());
 
         // Decide which line to use:
         // - If chunk ends with newline => use last line.
@@ -312,7 +312,7 @@ fn read_new(path: &PathBuf, positions: &mut HashMap<PathBuf, u64>, compiled_trig
             lines.nth(1) // skip the trailing partial, take previous
         };
 
-        if let (Some(id), Some(line)) = (serverlog_id, last_line) {
+        if let (Some(id), Some(line)) = (serverlog_id.as_deref(), last_line) {
             // Check first '['. If found, cut string starting there.
             let start_index = line.find('[').unwrap_or(0);
             let cleaned_line = &line[start_index..];
@@ -328,13 +328,13 @@ fn read_new(path: &PathBuf, positions: &mut HashMap<PathBuf, u64>, compiled_trig
             }
 
             // Send line to mcmyadmin
-            let _ = webhook_discord::send_discord_message(webhook_discord::get_webhook_mcmyadmin_by_server_id(serverlog_id), line);
+            let _ = webhook_discord::send_discord_message(webhook_discord::get_webhook_mcmyadmin_by_server_id(serverlog_id.as_deref()), line);
 
             // Match triggers only against the last (complete) line
             for (re, func, ids_opt) in compiled_triggers {
                 // Using cleaned line and not line
                 if re.is_match(cleaned_line) {
-                    if ids_opt.as_ref().map(|ids| ids.contains(&id)).unwrap_or(true) {
+                    if ids_opt.as_ref().map(|ids| ids.iter().any(|x| x == id)).unwrap_or(true) {
                         // Envoie la ligne nettoyée ou l'originale selon ton besoin
                         serverlog::actions::dispatch(func, cleaned_line, id);
                     }

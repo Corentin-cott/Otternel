@@ -2,7 +2,7 @@
 name = "doing_tests" # Name of the trigger
 game = "minecraft" # Game concerned by the trigger (Not set = All and any game)
 pattern = "Th1s 1s 4 7e57" # Regex partern triggering the action function
-serverlog_ids = [1] # Server ids concerned by the trigger (Not set = All and any server)
+serverlog_ids = ["499m2bs21q0xa52"] # active_servers record ids concerned (Not set = all servers)
 function = "on_test" # Function called in the action crate
 
 [[trigger]]

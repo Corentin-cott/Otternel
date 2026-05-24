@@ -232,7 +232,7 @@ fn parse_discord_color(s: &str) -> Option<u32> {
     u32::from_str_radix(t, 16).ok()
 }
 
-pub fn get_webhook_identity_by_server_id(game: String) -> &'static str {
+pub fn get_webhook_identity_by_server_id(game: &str) -> &'static str {
     match game.to_lowercase().as_str() {
         "minecraft" => "mineotter",
         "palworld" => "multiloutre",
@@ -240,9 +240,13 @@ pub fn get_webhook_identity_by_server_id(game: String) -> &'static str {
     }
 }
 
-pub fn get_webhook_mcmyadmin_by_server_id(server_id: Option<u32>) -> &'static str {
+/// Selects the mcmyadmin webhook for an active server id. The "primary" server
+/// is configured via the `MCMYADMIN_PRIMARY_SERVER_ID` env var (a PocketBase
+/// `active_servers` record id); everything else uses the secondary webhook.
+pub fn get_webhook_mcmyadmin_by_server_id(server_id: Option<&str>) -> &'static str {
+    let primary = std::env::var("MCMYADMIN_PRIMARY_SERVER_ID").unwrap_or_default();
     match server_id {
-        Some(1) => "mcmyadmin",
+        Some(id) if !primary.is_empty() && id == primary => "mcmyadmin",
         _ => "mcmyadmin_secondary",
     }
 }

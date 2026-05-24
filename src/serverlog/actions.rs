@@ -1,7 +1,7 @@
 use colored::Colorize;
 use log::{debug, error, info, warn};
 use crate::{helper};
-use crate::db::models::{JoueurConnectionLog, Serveur};
+use crate::db::models::{PlayerConnectionLog, Server};
 
 /// Dispatches a function call based on the input function name. Logs an error message if no function matches.
 ///
@@ -9,7 +9,7 @@ use crate::db::models::{JoueurConnectionLog, Serveur};
 ///
 /// * `function` - A string slice that contains the name of the function to dispatch.
 /// * `line` - A string slice passed as an argument to the matched function.
-/// * `serverlog_id` - The numeric identifier of the server log file, derived from its file name.
+/// * `serverlog_id` - The `active_servers` record id, derived from the log folder name.
 ///
 ///  # Returns
 /// This function does not return any value. It either executes the matched function
@@ -23,7 +23,7 @@ use crate::db::models::{JoueurConnectionLog, Serveur};
 /// - If `function` does not match any of the above cases, it logs an error
 ///   message to the standard error output.
 ///
-pub fn dispatch(function: &str, line: &str, serverlog_id: u32) {
+pub fn dispatch(function: &str, line: &str, serverlog_id: &str) {
     match function {
         "on_test" => on_test(serverlog_id),
         "on_player_message" => on_player_message(line, serverlog_id),
@@ -36,13 +36,13 @@ pub fn dispatch(function: &str, line: &str, serverlog_id: u32) {
 }
 
 // Actions
-fn on_test(serverlog_id: u32) {
-    info!("{} triggered with serverlog_id={}", "on_test".green().bold(), serverlog_id.to_string().green().bold());
+fn on_test(serverlog_id: &str) {
+    info!("{} triggered with serverlog_id={}", "on_test".green().bold(), serverlog_id.green().bold());
 }
 
-fn on_player_connection_update(line: &str, serverlog_id: u32, co_type: &str) {
+fn on_player_connection_update(line: &str, serverlog_id: &str, co_type: &str) {
     // Resolve active server at serverlog_id
-    let server:Serveur = get_server_by_active_server_id(serverlog_id);
+    let server: Server = get_server_by_active_server_id(serverlog_id);
 
     // Extract playername from a line like:
     // "[00:00:000] [Server thread/INFO]: playername joined/left the game"
@@ -77,36 +77,36 @@ fn on_player_connection_update(line: &str, serverlog_id: u32, co_type: &str) {
 
     // We check if the player's account is link & if `co_type` = rejoint. If not, we generate a code to link it
     if co_type == "rejoint" {
-        if let Err(e) = helper::code_generator::handle_unlinked_player_join(&db, player_id, &playername, serverlog_id) {
+        if let Err(e) = helper::code_generator::handle_unlinked_player_join(&db, &player_id, playername, serverlog_id) {
             error!("Failed to process player join for '{}': {}", playername, e);
         }
     }
-    
+
     // We log the player connection in database
-    let log = JoueurConnectionLog {
-        serveur_id: server.id,
-        joueur_id: player_id,
-        date: chrono::Utc::now().naive_utc(),
+    let log = PlayerConnectionLog {
+        server: server.id.clone(),
+        player: player_id.clone(),
+        logged_at: chrono::Utc::now().to_rfc3339(),
     };
-    if let Err(e) = db.insert_joueur_connection_log(&log) {
+    if let Err(e) = db.insert_player_connection_log(&log) {
         warn!("Failed to insert player connection log: {:?}", e);
     }
-    if let Err(e) = db.update_last_connection(player_id) {
+    if let Err(e) = db.update_last_connection(&player_id) {
         warn!("Failed to update last player connection: {:?}", e);
     }
 
     // Send Discord embed with the player's name
     if let Err(e) = helper::webhook_discord::send_discord_embed(
-        helper::webhook_discord::get_webhook_identity_by_server_id(server.jeu),
+        helper::webhook_discord::get_webhook_identity_by_server_id(server.platform_name.as_deref().unwrap_or("")),
         " ",
         playername,
         &format!("https://antredesloutres.fr/joueurs/minecraft/{}", playername.to_lowercase()),
-        &format!("{playername} a {co_type} {}", server.nom),
-        server.embed_color,
+        &format!("{playername} a {co_type} {}", server.name),
+        server.embed_color.clone(),
         " ",
         " ",
         " ",
-        &format!("Message de {}", server.nom),
+        &format!("Message de {}", server.name),
         Some(chrono::Utc::now()
             .to_rfc3339())
     ) {
@@ -115,9 +115,9 @@ fn on_player_connection_update(line: &str, serverlog_id: u32, co_type: &str) {
 
     // Broadcast connection/disconnection to other servers
     let playername = playername.to_string();
-    let server_nom = server.nom.clone();
+    let server_nom = server.name.clone();
     let co_type = co_type.to_string();
-    let origin_id = serverlog_id as u64;
+    let origin_id = serverlog_id.to_string();
 
     tokio::spawn(async move {
         let rcon = match helper::rcon_helper::RconHelper::new() {
@@ -144,7 +144,7 @@ fn on_player_connection_update(line: &str, serverlog_id: u32, co_type: &str) {
         );
 
         for target_server in servers.into_iter().filter(|s| s.active_id != origin_id) {
-            match rcon.execute_command(target_server.active_id, &command).await {
+            match rcon.execute_command(&target_server.active_id, &command).await {
                 Ok(_) => debug!(
                     "Cross-server connection update relayed to server id={}",
                     target_server.active_id
@@ -158,9 +158,9 @@ fn on_player_connection_update(line: &str, serverlog_id: u32, co_type: &str) {
     });
 }
 
-fn on_player_message(line: &str, serverlog_id: u32) {
+fn on_player_message(line: &str, serverlog_id: &str) {
     // Resolve active server at serverlog_id
-    let server: Serveur = get_server_by_active_server_id(serverlog_id);
+    let server: Server = get_server_by_active_server_id(serverlog_id);
 
     let re = regex::Regex::new(r"<([^>]+)>\s(.+)").unwrap();
     let caps = re.captures(line).unwrap();
@@ -171,16 +171,16 @@ fn on_player_message(line: &str, serverlog_id: u32) {
 
     // Send Discord embed with the player's message
     if let Err(e) = helper::webhook_discord::send_discord_embed(
-        helper::webhook_discord::get_webhook_identity_by_server_id(server.jeu),
+        helper::webhook_discord::get_webhook_identity_by_server_id(server.platform_name.as_deref().unwrap_or("")),
         " ",
         playername,
         &format!("https://antredesloutres.fr/joueurs/minecraft/{}", playername.to_lowercase()),
         message,
-        server.embed_color,
+        server.embed_color.clone(),
         &format!("https://mc-heads.net/avatar/{}/50", playername.to_lowercase()),
         " ",
         " ",
-        &format!("Message de {}", server.nom),
+        &format!("Message de {}", server.name),
         Some(chrono::Utc::now().to_rfc3339()),
     ) {
         error!("{e}");
@@ -189,7 +189,7 @@ fn on_player_message(line: &str, serverlog_id: u32) {
     // Send the message to the players in other servers (except the one it comes from)
     let playername = playername.to_string();
     let message = message.to_string();
-    let origin_id = serverlog_id as u64;
+    let origin_id = serverlog_id.to_string();
 
     tokio::spawn(async move {
         let rcon = match helper::rcon_helper::RconHelper::new() {
@@ -216,7 +216,7 @@ fn on_player_message(line: &str, serverlog_id: u32) {
         );
 
         for target_server in servers.into_iter().filter(|s| s.active_id != origin_id) {
-            match rcon.execute_command(target_server.active_id, &command).await {
+            match rcon.execute_command(&target_server.active_id, &command).await {
                 Ok(_) => debug!(
                     "Cross-server message relayed to server id={}",
                     target_server.active_id
@@ -230,9 +230,9 @@ fn on_player_message(line: &str, serverlog_id: u32) {
     });
 }
 
-fn on_minecraft_player_advancement(line: &str, serverlog_id: u32) {
+fn on_minecraft_player_advancement(line: &str, serverlog_id: &str) {
     // Resolve active server at serverlog_id
-    let server:Serveur = get_server_by_active_server_id(serverlog_id);
+    let server: Server = get_server_by_active_server_id(serverlog_id);
 
     let re = regex::Regex::new(
         r"^(?:\[[^\]]+\]\s*:?\s*)*([^ ]+)\s+(?:has made the advancement|completed the challenge|reached the goal)\s+\[?(.+?)\]$"
@@ -244,16 +244,16 @@ fn on_minecraft_player_advancement(line: &str, serverlog_id: u32) {
 
         // Send Discord embed with the player's message
         if let Err(e) = helper::webhook_discord::send_discord_embed(
-        helper::webhook_discord::get_webhook_identity_by_server_id(server.jeu),
+        helper::webhook_discord::get_webhook_identity_by_server_id(server.platform_name.as_deref().unwrap_or("")),
             " ",
             playername,
             &format!("https://antredesloutres.fr/joueurs/minecraft/{}", playername.to_lowercase()),
-            &format!("{} a obtenu l'avancement {} sur {} !", playername, advancement, server.nom),
-            server.embed_color,
+            &format!("{} a obtenu l'avancement {} sur {} !", playername, advancement, server.name),
+            server.embed_color.clone(),
             " ",
             " ",
             " ",
-            &format!("Message de {}", server.nom),
+            &format!("Message de {}", server.name),
             Some(chrono::Utc::now()
                 .to_rfc3339())
         ) {
@@ -265,9 +265,9 @@ fn on_minecraft_player_advancement(line: &str, serverlog_id: u32) {
     }
 }
 
-fn on_player_death(line: &str, serverlog_id: u32) {
+fn on_player_death(line: &str, serverlog_id: &str) {
     // Resolve active server from serverlog_id
-    let server: Serveur = get_server_by_active_server_id(serverlog_id);
+    let server: Server = get_server_by_active_server_id(serverlog_id);
 
     // Exemple de ligne : "[17:58:38] [Server thread/INFO]: TheAzertor fell from a high place"
     let re = regex::Regex::new(r": ([^ ]+) (.+)$").unwrap();
@@ -282,51 +282,51 @@ fn on_player_death(line: &str, serverlog_id: u32) {
 
     // Envoi de l'embed Discord
     if let Err(e) = helper::webhook_discord::send_discord_embed(
-        helper::webhook_discord::get_webhook_identity_by_server_id(server.jeu),
+        helper::webhook_discord::get_webhook_identity_by_server_id(server.platform_name.as_deref().unwrap_or("")),
         " ",
-        &format!("{playername} est mort sur {} !", server.nom),
+        &format!("{playername} est mort sur {} !", server.name),
         &format!("https://antredesloutres.fr/joueurs/minecraft/{}", playername.to_lowercase()),
         &format!("{playername} {death_message}"),
-        server.embed_color,
+        server.embed_color.clone(),
         " ",
         " ",
         " ",
-        &format!("Message de {}", server.nom),
+        &format!("Message de {}", server.name),
         Some(chrono::Utc::now().to_rfc3339()),
     ) {
         error!("{e}");
     }
 }
 
-fn get_server_by_active_server_id(serverlog_id: u32) -> Serveur {
+fn get_server_by_active_server_id(serverlog_id: &str) -> Server {
     // Load configuration for DB pool
     let db = match helper::open_database::open_db_from_env() {
         Some(db) => db,
         None => {
             warn!("Could not load DB configuration to resolve active server");
-            return Serveur::default();
+            return Server::default();
         }
     };
 
-    match db.get_server_by_active_server_id(serverlog_id as u64) {
+    match db.get_server_by_active_server_id(serverlog_id) {
         Ok(Some(s)) => {
             debug!(
                 "Resolved active server {} -> '{}'",
-                serverlog_id.to_string().green().bold(),
-                s.nom.green().bold()
+                serverlog_id.green().bold(),
+                s.name.green().bold()
             );
             s
         }
         Ok(None) => {
             error!("No server found for active server id {}", serverlog_id);
-            Serveur::default()
+            Server::default()
         }
         Err(e) => {
             error!(
                 "Error fetching server for active server id {}: {}",
                 serverlog_id, e
             );
-            Serveur::default()
+            Server::default()
         }
     }
 }

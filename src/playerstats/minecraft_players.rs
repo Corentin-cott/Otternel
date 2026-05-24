@@ -1,4 +1,4 @@
-use crate::playerstats::{cobblemon_stats, DockerFetcher};
+use crate::playerstats::cobblemon_stats;
 use serde_json::Value;
 use std::collections::HashMap;
 use colored::Colorize;
@@ -10,7 +10,7 @@ use crate::helper;
 /// - `server_id`: l'id du serveur (correspond au nom du dossier dans /stats/)
 ///
 pub async fn fetch_mc_player_stats(
-    server_id: u64,
+    server_id: &str,
 ) -> anyhow::Result<HashMap<String, Value>> {
     let local_path = format!("/stats/{}/", server_id);
 
@@ -66,13 +66,13 @@ pub async fn sync_mc_stats_to_db() -> anyhow::Result<()> {
     );
 
     for server in minecraft_servers {
-        info!("{} {} (ID: {})","Stating playerstats fetch for:".to_string().blue(), server.nom.green().bold(), server.id );
+        info!("{} {} (ID: {})","Stating playerstats fetch for:".to_string().blue(), server.name.green().bold(), server.id );
 
         // Fetch Minecraft stats ONLY from local storage
-        let stats_map: HashMap<String, Value> = match fetch_mc_player_stats(server.id).await {
+        let stats_map: HashMap<String, Value> = match fetch_mc_player_stats(&server.id).await {
             Ok(map) => map,
             Err(_) => {
-                info!("{} pour le serveur {}", "Aucun dossier local".yellow(), server.nom.yellow().bold());
+                info!("{} pour le serveur {}", "Aucun dossier local".yellow(), server.name.yellow().bold());
                 continue;
             }
         };
@@ -83,16 +83,16 @@ pub async fn sync_mc_stats_to_db() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn process_and_save_stats(db: &crate::db::repository_default::Database, server: &crate::db::models::Serveur, stats_map: HashMap<String, Value>) -> anyhow::Result<()> {
-    let container = server.contenaire.as_deref();
-    let world_name = server.nom_monde.as_deref();
+async fn process_and_save_stats(db: &crate::db::repository_default::Database, server: &crate::db::models::Server, stats_map: HashMap<String, Value>) -> anyhow::Result<()> {
+    let container = server.container.as_deref();
+    let world_name = server.world_name.as_deref();
 
     let mut total_cobblemon_pokemon = 0;
     let mut total_cobblemon_trainer = 0;
 
     // Cobblemon still uses Docker Fetcher for now as it's a different logic
     if let (Some(c), Some(w)) = (container, world_name) {
-        match cobblemon_stats::fetch_cobblemon_stats(server.id, c, w).await {
+        match cobblemon_stats::fetch_cobblemon_stats(&server.id, c, w).await {
             Ok((pokemon, trainers)) => {
                 total_cobblemon_pokemon = pokemon;
                 total_cobblemon_trainer = trainers;
@@ -100,7 +100,7 @@ async fn process_and_save_stats(db: &crate::db::repository_default::Database, se
             Err(e) => {
                     debug!(
                     "Failed to fetch cobblemon stats for server {}: {}",
-                    server.nom.yellow().bold(),
+                    server.name.yellow().bold(),
                     e.to_string().yellow().bold()
                 );
             }
@@ -157,7 +157,7 @@ async fn process_and_save_stats(db: &crate::db::repository_default::Database, se
         ) = extract_player_stats(&json);
 
         if db.add_or_update_playerstats(
-            server.id.clone(),
+            &server.id,
             &formatted_uuid,
             tmps_jeux,
             nb_mort,
@@ -203,14 +203,14 @@ async fn process_and_save_stats(db: &crate::db::repository_default::Database, se
     if let Err(e) = helper::webhook_discord::send_discord_embed(
         "otternel",
         "",
-        &format!("Playerstats fetch for {}", server.nom),
+        &format!("Playerstats fetch for {}", server.name),
         "",
         &embed_supertext,
         embed_color.into(),
         &*server.image.as_deref().unwrap_or(""),
         "",
         "",
-        &format!("{}", server.nom),
+        &format!("{}", server.name),
         Some(chrono::Utc::now().to_rfc3339())
     ) {
         error!("{e}");

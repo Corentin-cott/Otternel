@@ -45,7 +45,7 @@ pub fn create_linking_code() -> String {
 /// * `Ok(())` - If the operation was successful
 /// * `Result<(), Box<dyn std::error::Error>>` - Error otherwise
 /// 
-pub fn handle_unlinked_player_join(db: &Database, player_id: u64, playername: &str, serverlog_id: u32) -> Result<(), Box<dyn std::error::Error>> {
+pub fn handle_unlinked_player_join(db: &Database, player_id: &str, playername: &str, serverlog_id: &str) -> Result<(), Box<dyn std::error::Error>> {
     // Fist we check if the linking code feature is enabled
     let linking_code_enabled = std::env::var("LINKING_CODE_ENABLED").unwrap_or("false".to_string());
     if linking_code_enabled.to_lowercase() != "true" {
@@ -90,9 +90,10 @@ pub fn handle_unlinked_player_join(db: &Database, player_id: u64, playername: &s
     ); 
 
     // Execute the RCON command asynchronously with Tokio
+    let serverlog_id = serverlog_id.to_string();
     tokio::spawn(async move {
         debug!("Sending RCON command to server ID {}", serverlog_id);
-        if let Err(e) = rcon_helper.execute_command(serverlog_id as u64, &command_to_run).await {
+        if let Err(e) = rcon_helper.execute_command(&serverlog_id, &command_to_run).await {
             error!("Failed to execute RCON command to inform player linking code: {}", e);
         }
     });

@@ -20,7 +20,7 @@ struct Pokemon {
 }
 
 pub async fn fetch_cobblemon_player_pokemons(
-    server_id: u64,
+    server_id: &str,
     container_name: &str,
     _world_name: &str, // Unused for now
     fetcher: &DockerFetcher,
