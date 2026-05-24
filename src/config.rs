@@ -4,7 +4,9 @@ use serde::Deserialize;
 #[derive(Deserialize, Debug)]
 pub struct Config {
     pub log_level: String,
-    pub database_url: String,
+    pub pocketbase_url: String,
+    pub pocketbase_admin_email: String,
+    pub pocketbase_admin_password: String,
     pub serverlog_folder: String,
     pub otternel_webhook_activated: String,
     pub otternel_webhook_url: String,

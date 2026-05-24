@@ -4,7 +4,7 @@ use log::error;
 ///
 /// This function attempts to load the application configuration using
 /// `crate::config::Config::from_env`. If the configuration is successfully loaded, it retrieves
-/// the database URL and tries to initialize a database connection using
+/// the PocketBase URL and superuser credentials and tries to initialize a client using
 /// `crate::db::repository_default::Database::new`. If either step fails, an error message is logged
 /// to standard error, and `None` is returned.
 ///
@@ -36,10 +36,14 @@ pub fn open_db_from_env() -> Option<crate::db::repository_default::Database> {
             return None;
         }
     };
-    match crate::db::repository_default::Database::new(&cfg.database_url) {
+    match crate::db::repository_default::Database::new(
+        &cfg.pocketbase_url,
+        &cfg.pocketbase_admin_email,
+        &cfg.pocketbase_admin_password,
+    ) {
         Ok(db) => Some(db),
         Err(e) => {
-            error!("Could not create DB pool: {:?}", e);
+            error!("Could not create PocketBase client: {:?}", e);
             None
         }
     }

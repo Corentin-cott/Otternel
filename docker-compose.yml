@@ -17,8 +17,12 @@ services:
       - "host.docker.internal:host-gateway"
     networks:
       - mysql_network
+      - pocketbase_network
 
 networks:
   mysql_network:
     external: true
     name: mysql_network
+  pocketbase_network:
+    external: true
+    name: pocketbase_network
