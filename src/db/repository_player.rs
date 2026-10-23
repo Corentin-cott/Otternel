@@ -193,7 +193,10 @@ impl Database {
     ) -> Result<String, Box<dyn std::error::Error>> {
         let (platform, account_id) = platform_account
             .split_once('_')
-            .filter(|(platform, id)| !platform.is_empty() && !id.is_empty())
+            // A malformed id (e.g. a badly parsed log line) must never create a player
+            .filter(|(platform, id)| {
+                !platform.is_empty() && !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric())
+            })
             .ok_or_else(|| format!("Invalid palworld platform id '{}'", platform_account))?;
 
         let platform_id = self
@@ -346,10 +349,39 @@ impl Database {
         Ok(())
     }
 
+    /// Links a Palworld character (`PlayerUid`) to a `players` record on a
+    /// server. Creates a minimal `palworld_stats` row if none exists yet; the
+    /// next save sync fills in the stats.
+    pub fn link_palworld_player(
+        &self,
+        server_id: &str,
+        player_uid: &str,
+        player_id: &str,
+        playername: &str,
+    ) -> Result<(), DbError> {
+        let filter = format!("server='{}' && player_id='{}'", server_id, player_uid);
+        match self.find_first("palworld_stats", &filter)? {
+            Some(existing) => {
+                let id = existing.get("id").and_then(|v| v.as_str()).unwrap_or_default();
+                self.update_record("palworld_stats", id, &json!({ "player": player_id }))?;
+            }
+            None => {
+                let body = json!({
+                    "server": server_id,
+                    "player_id": player_uid,
+                    "player": player_id,
+                    "playername": playername,
+                });
+                self.create_record("palworld_stats", &body)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Links a Palworld character to a `players` record on a server, matched
-    /// on its `playername`. Logs only give the name and the platform id, not
-    /// the `PlayerUid`, so the character must already be in `palworld_stats`
-    /// (from a save sync). Only unlinked rows are updated.
+    /// on its `playername`. Fallback for log lines without the `Player id`:
+    /// the character must already be in `palworld_stats` (from a save sync).
+    /// Only unlinked rows are updated.
     ///
     /// Returns `true` if a character was linked.
     pub fn link_palworld_player_by_name(

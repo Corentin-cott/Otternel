@@ -161,14 +161,19 @@ fn on_player_connection_update(line: &str, serverlog_id: &str, co_type: &str) {
 }
 
 fn on_palworld_player_connection_update(line: &str, serverlog_id: &str, co_type: &str) {
-    // Extract playername and platform id from a line like:
-    // "[2025-01-01 00:00:00] [LOG] playername joined/left the server. (User id: steam_7656...)"
-    let Some(event) = palworld_stats::parse_log_line(line) else {
+    // Extract playername, platform id and character id from a line like:
+    // "[2026-10-23 22:58:47] [LOG] playername joined the server. (User id: steam_7656..., Player id: 3C36EC75...)"
+    // The "Player id" part may be missing (left lines, older server versions)
+    let re = regex::Regex::new(
+        r"(?:.*\[LOG\])?\s*(.+?) (?:joined|left) the server\.? \(User id: ([^,)]+)(?:, Player id: ([0-9A-Fa-f]+))?\)"
+    ).unwrap();
+    let Some(caps) = re.captures(line) else {
         debug!("no palworld connection match: {}", line);
         return;
     };
-    let playername = event.name.as_str();
-    let account_id = event.platform_id.to_string();
+    let playername = caps.get(1).map(|m| m.as_str().trim()).unwrap_or("Joueur");
+    let account_id = caps.get(2).map(|m| m.as_str().trim()).unwrap_or_default().to_string();
+    let player_uid = caps.get(3).map(|m| m.as_str().to_uppercase());
 
     // Resolve active server at serverlog_id
     let server: Server = get_server_by_id(serverlog_id);
@@ -191,9 +196,14 @@ fn on_palworld_player_connection_update(line: &str, serverlog_id: &str, co_type:
         }
     };
 
-    // Saves don't contain the platform id: link the player to their character on join
+    // Saves don't contain the platform id: link the player to their character on join.
+    // Exact match on the character id when the line has it, else on the name
     if co_type == "rejoint" {
-        match db.link_palworld_player_by_name(&server.id, playername, &player_id) {
+        let linked = match &player_uid {
+            Some(uid) => db.link_palworld_player(&server.id, uid, &player_id, playername).map(|_| true),
+            None => db.link_palworld_player_by_name(&server.id, playername, &player_id),
+        };
+        match linked {
             Ok(true) => info!("Palworld player {} ({}) linked to their character", playername.green().bold(), account_id),
             Ok(false) => debug!("No unlinked palworld character named {} on server {}", playername, server.name),
             Err(e) => warn!("Failed to link palworld player {}: {:?}", playername, e),
