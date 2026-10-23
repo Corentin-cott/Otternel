@@ -1378,7 +1378,7 @@ dependencies = [
 [[package]]
 name = "palworld-stats"
 version = "0.1.0"
-source = "git+https://github.com/matheo-1712/palworld-stats-crate#62a463d8950d8f776e88b42d7ac1c1c632b00ffb"
+source = "git+https://github.com/matheo-1712/palworld-stats-crate#d1a67dd114073e42ae882d83570ab9f1e79acb2e"
 dependencies = [
  "chrono",
  "flate2",

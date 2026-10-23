@@ -1,6 +1,8 @@
 use crate::helper;
 use crate::db::models::PalworldPlayerStats;
-use ::palworld_stats::{GuildInfo, PlayerStats, WorldStats, parse_world};
+use ::palworld_stats::{GuildInfo, Lang, PlayerStats, WorldStats, pal_name, pal_species_name, parse_world, passive_name};
+use serde_json::{json, Value};
+use std::collections::BTreeMap;
 use colored::Colorize;
 use log::{debug, error, info, trace, warn};
 
@@ -193,11 +195,80 @@ fn extract_player_stats(server_id: &str, player: &PlayerStats, guilds: &[GuildIn
         game_cleared: records.and_then(|r| r.game_cleared).map(u8::from),
         pal_lucky: Some(player.pal_summary.lucky),
         // The party is only known from the player file
-        pal_team: record.and_then(|_| serde_json::to_value(player.party()).ok()),
-        capture_by_species: records.and_then(|r| serde_json::to_value(&r.pal_capture_by_species).ok()),
-        butcher_by_species: records.and_then(|r| serde_json::to_value(&r.butcher_by_species).ok()),
-        tower_boss_defeats: records.and_then(|r| serde_json::to_value(&r.tower_boss_defeats).ok()),
-        raid_boss_defeats: records.and_then(|r| serde_json::to_value(&r.raid_boss_defeats).ok()),
+        pal_team: record.map(|_| pal_team_with_names(player)),
+        capture_by_species: records.map(|r| counts_with_names(&r.pal_capture_by_species, |id| pal_name(id, Lang::Fr))),
+        butcher_by_species: records.map(|r| counts_with_names(&r.butcher_by_species, |id| pal_name(id, Lang::Fr))),
+        tower_boss_defeats: records.map(|r| counts_with_names(&r.tower_boss_defeats, tower_boss_name)),
+        raid_boss_defeats: records.map(|r| counts_with_names(&r.raid_boss_defeats, raid_boss_name)),
         pal_summary: serde_json::to_value(&player.pal_summary).ok(),
     }
+}
+
+/// Pals of the party, each with its French names added: `name_fr` (variant title included),
+/// `species_name_fr` and `passives_fr` (same order as `passives`, `null` when unknown)
+fn pal_team_with_names(player: &PlayerStats) -> Value {
+    let team = player.party().into_iter().filter_map(|pal| {
+        let mut value = serde_json::to_value(pal).ok()?;
+        if let Value::Object(fields) = &mut value {
+            fields.insert("name_fr".into(), json!(pal_name(&pal.species, Lang::Fr)));
+            fields.insert("species_name_fr".into(), json!(pal_species_name(&pal.species, Lang::Fr)));
+            fields.insert(
+                "passives_fr".into(),
+                json!(pal.passives.iter().map(|p| passive_name(p, Lang::Fr)).collect::<Vec<_>>()),
+            );
+        }
+        Some(value)
+    }).collect();
+
+    Value::Array(team)
+}
+
+/// Converts `{ id: count }` to `{ id: { "count": count, "name_fr": name } }`. The name is `null`
+/// when unknown (e.g. `Human`, the single capture counter of every human)
+fn counts_with_names(counts: &BTreeMap<String, i32>, name_fr: impl Fn(&str) -> Option<&'static str>) -> Value {
+    let map: serde_json::Map<String, Value> = counts.iter()
+        .map(|(id, count)| (id.clone(), json!({ "count": count, "name_fr": name_fr(id) })))
+        .collect();
+
+    Value::Object(map)
+}
+
+/// Tower of the save key (`GrassBoss_Hard`) -> character id of its boss in the names table.
+/// The save only stores the tower, not the boss
+const TOWER_BOSSES: &[(&str, &str)] = &[
+    ("GrassBoss", "GYM_ElecPanda"),             // Zoe & Grizzbolt
+    ("ForestBoss", "GYM_LilyQueen"),            // Lily & Lyleen
+    ("ElectricBoss", "GYM_ThunderDragonMan"),   // Axel & Orserk
+    ("SnowBoss", "GYM_Horus"),                  // Marcus & Faleris
+    ("DesertBoss", "GYM_BlackGriffon"),         // Victor & Shadowbeak
+    ("SakurajimaBoss", "GYM_MoonQueen"),        // Saya & Selyne
+    ("VikingBoss", "GYM_SnowTigerBeastman"),    // Bjorn & Bastigor
+    ("SorajimaBoss", "GYM_BlueSkyDragon"),      // Auri & Shaolong
+    ("WorldTreeBoss", "GYM_WorldTreeDragon"),   // Zenara & Astralym
+    ("KingWhaleBoss", "KingWhale"),             // Panthalus
+];
+
+/// French name of a tower boss key (`GrassBoss_Normal`, `GrassBoss_Hard`). Hard mode uses the
+/// `_2` variant of the boss when it exists
+fn tower_boss_name(id: &str) -> Option<&'static str> {
+    let (tower, hard) = match id.rsplit_once('_') {
+        Some((tower, "Hard")) => (tower, true),
+        Some((tower, "Normal")) => (tower, false),
+        _ => (id, false),
+    };
+    let boss = TOWER_BOSSES.iter().find(|(t, _)| *t == tower)?.1;
+
+    hard.then(|| pal_name(&format!("{}_2", boss), Lang::Fr))
+        .flatten()
+        .or_else(|| pal_name(boss, Lang::Fr))
+}
+
+/// French name of a raid boss key (`PalSummon_NightLady`) from its `RAID_` entry
+fn raid_boss_name(id: &str) -> Option<&'static str> {
+    let boss = id.strip_prefix("PalSummon_").unwrap_or(id);
+
+    // Some RAID_ entries only hold a placeholder (their own id): the name is then on the head
+    [format!("RAID_{}", boss), format!("RAID_{}_Head", boss), boss.to_string()]
+        .iter()
+        .find_map(|candidate| pal_name(candidate, Lang::Fr).filter(|name| !name.eq_ignore_ascii_case(candidate)))
 }
