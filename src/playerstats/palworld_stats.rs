@@ -191,5 +191,13 @@ fn extract_player_stats(server_id: &str, player: &PlayerStats, guilds: &[GuildIn
         craft_item_total: records.and_then(|r| r.craft_item_total),
         fast_travel_unlocked: records.and_then(|r| r.fast_travel_unlocked),
         game_cleared: records.and_then(|r| r.game_cleared).map(u8::from),
+        pal_lucky: Some(player.pal_summary.lucky),
+        // The party is only known from the player file
+        pal_team: record.and_then(|_| serde_json::to_value(player.party()).ok()),
+        capture_by_species: records.and_then(|r| serde_json::to_value(&r.pal_capture_by_species).ok()),
+        butcher_by_species: records.and_then(|r| serde_json::to_value(&r.butcher_by_species).ok()),
+        tower_boss_defeats: records.and_then(|r| serde_json::to_value(&r.tower_boss_defeats).ok()),
+        raid_boss_defeats: records.and_then(|r| serde_json::to_value(&r.raid_boss_defeats).ok()),
+        pal_summary: serde_json::to_value(&player.pal_summary).ok(),
     }
 }

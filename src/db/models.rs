@@ -122,6 +122,19 @@ pub struct PalworldPlayerStats {
     pub fast_travel_unlocked: Option<u32>,
     /// Number field in PocketBase: 1 when the game is cleared, else 0.
     pub game_cleared: Option<u8>,
+    pub pal_lucky: Option<u32>,
+    /// JSON: party pals, in slot order.
+    pub pal_team: Option<serde_json::Value>,
+    /// JSON: `{ species: count }`.
+    pub capture_by_species: Option<serde_json::Value>,
+    /// JSON: `{ species: count }`.
+    pub butcher_by_species: Option<serde_json::Value>,
+    /// JSON: `{ boss: victories }`.
+    pub tower_boss_defeats: Option<serde_json::Value>,
+    /// JSON: `{ boss: victories }`.
+    pub raid_boss_defeats: Option<serde_json::Value>,
+    /// JSON: aggregates over the player's pals (total, lucky, alpha, max level…).
+    pub pal_summary: Option<serde_json::Value>,
 }
 
 /// A single captured Pokemon (PocketBase `captured_pokemons`). Each record is
