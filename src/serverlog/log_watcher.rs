@@ -118,6 +118,15 @@ fn sanitize_log(input: &str) -> String {
     out
 }
 
+/// Removes the `System chat: ` prefix that newer Minecraft versions insert
+/// right after the log header (e.g. `[19:06:25] [Server thread/INFO]: System chat: NinjaJul was shot by Skeleton`),
+/// so the line matches the legacy format expected by triggers and actions.
+/// Lines without the prefix (older versions) are returned unchanged.
+fn strip_system_chat_prefix(line: &str) -> String {
+    let re = Regex::new(r"^((?:\[[^\]]*\]\s*)+:\s*)System chat:\s*").unwrap();
+    re.replace(line, "$1").into_owned()
+}
+
 /// This function monitors a folder for `.log` files using file system notifications.
 /// It prints the content of newly created or modified `.log` files and tracks the last
 /// read position in the file to ensure only new additions are read subsequently. Deleted
@@ -315,7 +324,10 @@ fn read_new(path: &PathBuf, positions: &mut HashMap<PathBuf, u64>, compiled_trig
         if let (Some(id), Some(line)) = (serverlog_id.as_deref(), last_line) {
             // Check first '['. If found, cut string starting there.
             let start_index = line.find('[').unwrap_or(0);
-            let cleaned_line = &line[start_index..];
+            // Newer Minecraft versions prefix system messages (deaths, joins...)
+            // with "System chat: ". Strip it so triggers and actions keep
+            // working with the legacy format.
+            let cleaned_line = &strip_system_chat_prefix(&line[start_index..]);
 
             // Debug: print only the last line for visibility
             debug!("{} (last line)", path.display().to_string().green().bold());
@@ -352,4 +364,28 @@ fn read_new(path: &PathBuf, positions: &mut HashMap<PathBuf, u64>, compiled_trig
     positions.insert(path.clone(), new_pos);
 
     Ok(())
+}
+#[cfg(test)]
+mod tests {
+    use super::strip_system_chat_prefix;
+
+    #[test]
+    fn strips_system_chat_prefix() {
+        assert_eq!(
+            strip_system_chat_prefix("[19:06:25] [Server thread/INFO]: System chat: NinjaJul was shot by Skeleton"),
+            "[19:06:25] [Server thread/INFO]: NinjaJul was shot by Skeleton"
+        );
+        assert_eq!(
+            strip_system_chat_prefix("[19:06:25] [Server thread/INFO] [minecraft/MinecraftServer]: System chat: Bob joined the game"),
+            "[19:06:25] [Server thread/INFO] [minecraft/MinecraftServer]: Bob joined the game"
+        );
+    }
+
+    #[test]
+    fn keeps_legacy_and_player_lines_unchanged() {
+        let legacy = "[02:37:00] [Server thread/INFO]: MrBizard was slain by Arachne";
+        assert_eq!(strip_system_chat_prefix(legacy), legacy);
+        let chat = "[02:37:00] [Server thread/INFO]: <Bob> System chat: hello";
+        assert_eq!(strip_system_chat_prefix(chat), chat);
+    }
 }
