@@ -124,4 +124,26 @@ async fn periodic_playerstats_fetch() {
     ) {
         error!("{e}");
     }
+
+    // Launch palworld player stats
+    if let Err(e) = playerstats::palworld_stats::sync_palworld_stats_to_db().await {
+        error!("Erreur sync_palworld_stats_to_db: {e:?}");
+    }
+
+    // Palworld player stats fetch ended, send embed
+    if let Err(e) = send_discord_embed(
+        "otternel",
+        "",
+        "Enregistrement des stats de joueurs Palworld",
+        "",
+        "Enregistrement des stats de joueurs Palworld terminé.",
+        Some("126020".to_string()),
+        "",
+        "",
+        "",
+        "Otternel Service",
+        Some(chrono::Utc::now().to_rfc3339()),
+    ) {
+        error!("{e}");
+    }
 }

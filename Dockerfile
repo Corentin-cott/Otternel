@@ -1,4 +1,4 @@
-FROM rust:1.87-slim AS builder
+FROM rust:1.88-slim AS builder
 WORKDIR /build
 
 # Cache dependency separately to speed up builds

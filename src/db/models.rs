@@ -174,6 +174,9 @@ pub struct Player {
     /// Relation id -> `platforms`. Required (Nonempty) — every player must
     /// have a platform.
     pub platform: String,
+    /// Public profile infos, only filled for Steam players.
+    pub avatar_url: Option<String>,
+    pub profile_url: Option<String>,
     /// RFC3339 UTC timestamps.
     pub first_connected_at: Option<String>,
     pub last_connected_at: Option<String>,

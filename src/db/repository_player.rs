@@ -181,6 +181,73 @@ impl Database {
         Ok(id.to_string())
     }
 
+    /// Finds a Palworld player by `(platform, account_id)`, creating it if it
+    /// does not exist. `platform_account` is the Palworld platform id
+    /// (`steam_7656…`, `xbox_…`): the prefix selects the `platforms` record
+    /// (`steam`, `xbox`) and the rest is stored as `account_id`. Returns the
+    /// player record id.
+    pub fn add_palworld_player_if_not_exist(
+        &self,
+        platform_account: &str,
+        playername: &str,
+    ) -> Result<String, Box<dyn std::error::Error>> {
+        let (platform, account_id) = platform_account
+            .split_once('_')
+            .filter(|(platform, id)| !platform.is_empty() && !id.is_empty())
+            .ok_or_else(|| format!("Invalid palworld platform id '{}'", platform_account))?;
+
+        let platform_id = self
+            .get_platform_id_by_name(platform)?
+            .ok_or_else(|| format!("No '{}' platform found in PocketBase", platform))?;
+
+        // Public profile infos, refreshed on every call (avatar and profile can change)
+        let steam_profile = if platform.eq_ignore_ascii_case("steam") {
+            helper::steam_api::fetch_steam_profile(account_id)
+        } else {
+            None
+        };
+
+        let filter = format!("platform='{}' && account_id='{}'", platform_id, account_id);
+        if let Some(p) = self.find_first("players", &filter)? {
+            if let Some(id) = p.get("id").and_then(|v| v.as_str()) {
+                if let Some(profile) = &steam_profile {
+                    let body = json!({
+                        "avatar_url": profile.avatar_url,
+                        "profile_url": profile.profile_url,
+                    });
+                    if let Err(e) = self.update_record("players", id, &body) {
+                        warn!("Failed to update steam profile of player {}: {:?}", playername.yellow().bold(), e);
+                    }
+                }
+                return Ok(id.to_string());
+            }
+        }
+
+        let now = chrono::Utc::now().to_rfc3339();
+        let body = json!({
+            "platform": platform_id,
+            "account_id": account_id,
+            "playername": playername,
+            "avatar_url": steam_profile.as_ref().map(|p| p.avatar_url.as_str()),
+            "profile_url": steam_profile.as_ref().map(|p| p.profile_url.as_str()),
+            "first_connected_at": now,
+            "last_connected_at": now,
+        });
+        let created = self.create_record("players", &body)?;
+        let id = created
+            .get("id")
+            .and_then(|v| v.as_str())
+            .ok_or("created player record is missing an id")?;
+
+        debug!(
+            "Added new {} player to database : {} with account id : {}",
+            platform,
+            playername.green().bold(),
+            account_id.green().bold()
+        );
+        Ok(id.to_string())
+    }
+
     // ===========================
     // player_connections_logs
     // ===========================
@@ -277,6 +344,33 @@ impl Database {
             }
         }
         Ok(())
+    }
+
+    /// Links a Palworld character to a `players` record on a server, matched
+    /// on its `playername`. Logs only give the name and the platform id, not
+    /// the `PlayerUid`, so the character must already be in `palworld_stats`
+    /// (from a save sync). Only unlinked rows are updated.
+    ///
+    /// Returns `true` if a character was linked.
+    pub fn link_palworld_player_by_name(
+        &self,
+        server_id: &str,
+        playername: &str,
+        player_id: &str,
+    ) -> Result<bool, DbError> {
+        let filter = format!(
+            "server='{}' && playername='{}' && player=''",
+            server_id,
+            playername.replace('\'', "\\'")
+        );
+        match self.find_first("palworld_stats", &filter)? {
+            Some(existing) => {
+                let id = existing.get("id").and_then(|v| v.as_str()).unwrap_or_default();
+                self.update_record("palworld_stats", id, &json!({ "player": player_id }))?;
+                Ok(true)
+            }
+            None => Ok(false),
+        }
     }
 
     // ===========================
