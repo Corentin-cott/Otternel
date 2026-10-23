@@ -3,7 +3,7 @@ use log::{debug, warn};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::db::models::PlayerConnectionLog;
+use crate::db::models::{PalworldPlayerStats, PlayerConnectionLog};
 use crate::helper;
 
 use super::repository_default::{Database, DbError};
@@ -252,6 +252,28 @@ impl Database {
             }
             None => {
                 self.create_record("players_stats", &body)?;
+            }
+        }
+        Ok(())
+    }
+
+    // ===========================
+    // palworld_stats
+    // ===========================
+
+    /// Inserts or updates a Palworld player's stats for a server, keyed on
+    /// `(server, player_id)`.
+    pub fn add_or_update_palworld_stats(&self, stats: &PalworldPlayerStats) -> Result<(), DbError> {
+        let body = serde_json::to_value(stats).unwrap_or(Value::Null);
+
+        let filter = format!("server='{}' && player_id='{}'", stats.server, stats.player_id);
+        match self.find_first("palworld_stats", &filter)? {
+            Some(existing) => {
+                let id = existing.get("id").and_then(|v| v.as_str()).unwrap_or_default();
+                self.update_record("palworld_stats", id, &body)?;
+            }
+            None => {
+                self.create_record("palworld_stats", &body)?;
             }
         }
         Ok(())
