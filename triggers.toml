@@ -234,3 +234,16 @@ name = "minecraft_player_death_explosion"
 game = "minecraft"
 pattern = ".* .* [^ ]+ was blown up by .*"
 function = "on_player_death"
+
+# PALWORLD TRIGGERS
+[[trigger]]
+name = "palworld_player_joined"
+game = "palworld"
+pattern = ".+ joined the server\\.? \\(User id: .+\\)"
+function = "on_palworld_player_joined"
+
+[[trigger]]
+name = "palworld_player_left"
+game = "palworld"
+pattern = ".+ left the server\\.? \\(User id: .+\\)"
+function = "on_palworld_player_left"

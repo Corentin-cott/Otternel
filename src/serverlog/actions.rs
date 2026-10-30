@@ -31,6 +31,8 @@ pub fn dispatch(function: &str, line: &str, serverlog_id: &str) {
         "on_player_left" => on_player_connection_update(line, serverlog_id, "quitté"),
         "on_minecraft_player_advancement" => on_minecraft_player_advancement(line, serverlog_id),
         "on_player_death" => on_player_death(line, serverlog_id),
+        "on_palworld_player_joined" => on_palworld_player_connection_update(line, serverlog_id, "rejoint"),
+        "on_palworld_player_left" => on_palworld_player_connection_update(line, serverlog_id, "quitté"),
         _ => warn!("Unknown action function: {}", function.yellow()),
     }
 }
@@ -156,6 +158,87 @@ fn on_player_connection_update(line: &str, serverlog_id: &str, co_type: &str) {
             }
         }
     });
+}
+
+fn on_palworld_player_connection_update(line: &str, serverlog_id: &str, co_type: &str) {
+    // Extract playername, platform id and character id from a line like:
+    // "[2026-10-23 22:58:47] [LOG] playername joined the server. (User id: steam_7656..., Player id: 3C36EC75...)"
+    // The "Player id" part may be missing (left lines, older server versions)
+    let re = regex::Regex::new(
+        r"(?:.*\[LOG\])?\s*(.+?) (?:joined|left) the server\.? \(User id: ([^,)]+)(?:, Player id: ([0-9A-Fa-f]+))?\)"
+    ).unwrap();
+    let Some(caps) = re.captures(line) else {
+        debug!("no palworld connection match: {}", line);
+        return;
+    };
+    let playername = caps.get(1).map(|m| m.as_str().trim()).unwrap_or("Joueur");
+    let account_id = caps.get(2).map(|m| m.as_str().trim()).unwrap_or_default().to_string();
+    let player_uid = caps.get(3).map(|m| m.as_str().to_uppercase());
+
+    // Resolve active server at serverlog_id
+    let server: Server = get_server_by_id(serverlog_id);
+
+    // Load configuration for DB pool before logging player connection
+    let db = match helper::open_database::open_db_from_env() {
+        Some(db) => db,
+        None => {
+            warn!("Could not load DB configuration to resolve active server");
+            return;
+        }
+    };
+
+    // We need to get the player id. If the player isn't in the database, they will be added
+    let player_id = match db.add_palworld_player_if_not_exist(&account_id, playername) {
+        Ok(id) => id,
+        Err(err) => {
+            error!("Player {}'s ID couldn't be fetched or added to the database: {}", playername, err);
+            return;
+        }
+    };
+
+    // Saves don't contain the platform id: link the player to their character on join.
+    // Exact match on the character id when the line has it, else on the name
+    if co_type == "rejoint" {
+        let linked = match &player_uid {
+            Some(uid) => db.link_palworld_player(&server.id, uid, &player_id, playername).map(|_| true),
+            None => db.link_palworld_player_by_name(&server.id, playername, &player_id),
+        };
+        match linked {
+            Ok(true) => info!("Palworld player {} ({}) linked to their character", playername.green().bold(), account_id),
+            Ok(false) => debug!("No unlinked palworld character named {} on server {}", playername, server.name),
+            Err(e) => warn!("Failed to link palworld player {}: {:?}", playername, e),
+        }
+    }
+
+    // We log the player connection in database
+    let log = PlayerConnectionLog {
+        server: server.id.clone(),
+        player: player_id.clone(),
+        logged_at: chrono::Utc::now().to_rfc3339(),
+    };
+    if let Err(e) = db.insert_player_connection_log(&log) {
+        warn!("Failed to insert player connection log: {:?}", e);
+    }
+    if let Err(e) = db.update_last_connection(&player_id) {
+        warn!("Failed to update last player connection: {:?}", e);
+    }
+
+    // Send Discord embed with the player's name
+    if let Err(e) = helper::webhook_discord::send_discord_embed(
+        helper::webhook_discord::get_webhook_identity_by_server_id(server.platform_name.as_deref().unwrap_or("")),
+        " ",
+        playername,
+        "",
+        &format!("{playername} a {co_type} {}", server.name),
+        server.embed_color.clone(),
+        " ",
+        " ",
+        " ",
+        &format!("Message de {}", server.name),
+        Some(chrono::Utc::now().to_rfc3339())
+    ) {
+        error!("{e}");
+    }
 }
 
 fn on_player_message(line: &str, serverlog_id: &str) {

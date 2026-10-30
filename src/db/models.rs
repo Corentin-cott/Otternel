@@ -92,6 +92,51 @@ pub struct PlayerStats {
     pub achievements: Option<serde_json::Value>,
 }
 
+/// Palworld player statistics (PocketBase `palworld_stats`), keyed on
+/// `(server, player_id)`. `None` values are stored as `null`.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PalworldPlayerStats {
+    /// Relation id -> `players`. Saves don't contain the platform id, so it is
+    /// unknown until the player is seen online; never sent when `None` so an
+    /// existing link is not cleared.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub player: Option<String>,
+    /// Relation id -> `servers`.
+    pub server: String,
+    /// Palworld `PlayerUid` (32 uppercase hex chars).
+    pub player_id: String,
+    pub playername: Option<String>,
+    pub guild_name: Option<String>,
+    pub level: Option<u8>,
+    pub nb_catch_pal: Option<u64>,
+    pub unlocked_technologies: Option<u32>,
+    pub completed_quests: Option<u32>,
+    pub species_captured: Option<i32>,
+    pub tower_boss_defeated: Option<u32>,
+    pub pal_butcher_total: Option<u64>,
+    /// Normal + fixed dungeons.
+    pub dungeon_clear: Option<i32>,
+    pub oilrig_clear: Option<i32>,
+    pub fishing_total: Option<u64>,
+    pub craft_item_total: Option<u64>,
+    pub fast_travel_unlocked: Option<u32>,
+    /// Number field in PocketBase: 1 when the game is cleared, else 0.
+    pub game_cleared: Option<u8>,
+    pub pal_lucky: Option<u32>,
+    /// JSON: party pals, in slot order.
+    pub pal_team: Option<serde_json::Value>,
+    /// JSON: `{ species: count }`.
+    pub capture_by_species: Option<serde_json::Value>,
+    /// JSON: `{ species: count }`.
+    pub butcher_by_species: Option<serde_json::Value>,
+    /// JSON: `{ boss: victories }`.
+    pub tower_boss_defeats: Option<serde_json::Value>,
+    /// JSON: `{ boss: victories }`.
+    pub raid_boss_defeats: Option<serde_json::Value>,
+    /// JSON: aggregates over the player's pals (total, lucky, alpha, max level…).
+    pub pal_summary: Option<serde_json::Value>,
+}
+
 /// A single captured Pokemon (PocketBase `captured_pokemons`). Each record is
 /// distinct (keyed only by its own id, not by `pokemon_uuid`).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -129,6 +174,9 @@ pub struct Player {
     /// Relation id -> `platforms`. Required (Nonempty) — every player must
     /// have a platform.
     pub platform: String,
+    /// Public profile infos, only filled for Steam players.
+    pub avatar_url: Option<String>,
+    pub profile_url: Option<String>,
     /// RFC3339 UTC timestamps.
     pub first_connected_at: Option<String>,
     pub last_connected_at: Option<String>,

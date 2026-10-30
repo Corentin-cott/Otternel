@@ -11,6 +11,7 @@ use serde_json::Value;
 pub mod minecraft_players;
 mod cobblemon_pokemon_fetch;
 mod cobblemon_stats;
+pub mod palworld_stats;
 
 pub struct DockerFetcher {
     docker: Docker,
